@@ -22,13 +22,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      - name: Setup Flutter
+      - name: Setup Flutter stable
         uses: subosito/flutter-action@v2
         with:
           channel: stable
@@ -36,6 +36,33 @@ jobs:
 
       - name: Flutter version
         run: flutter --version
+
+      - name: Recreate compatible Android project
+        shell: bash
+        run: |
+          rm -rf android
+          flutter create --platforms=android --org com.niteshkhobragade --project-name creator_studio .
+
+      - name: Configure Khobragade AI Android app
+        shell: python
+        run: |
+          from pathlib import Path
+          p = Path("android/app/src/main/AndroidManifest.xml")
+          s = p.read_text(encoding="utf-8")
+
+          permissions = [
+              '<uses-permission android:name="android.permission.INTERNET" />',
+              '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+          ]
+          for perm in permissions:
+              if perm not in s:
+                  s = s.replace("<manifest", "<manifest", 1)
+                  pos = s.find(">") + 1
+                  s = s[:pos] + "\n    " + perm + s[pos:]
+
+          import re
+          s = re.sub(r'android:label="[^"]*"', 'android:label="Khobragade AI"', s, count=1)
+          p.write_text(s, encoding="utf-8")
 
       - name: Get dependencies
         run: flutter pub get
