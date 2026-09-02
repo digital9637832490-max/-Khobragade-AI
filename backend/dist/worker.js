@@ -1,5 +1,5 @@
 import { pool, tx } from './db.js';
-import { textProvider, imageProvider, videoProvider } from './ai/providers.js';
+import { textProvider, imageProvider, videoProvider, audioProvider } from './ai/providers.js';
 import { changeCoins } from './wallet.js';
 async function processOne() {
     const client = await pool.connect();
@@ -24,8 +24,9 @@ async function processOne() {
     }
     try {
         const result = (job.tool_key === 'thumbnail' || job.tool_key === 'photo') ? await imageProvider.generate(job.input)
-            : (job.tool_key === 'video' || job.tool_key === 'voiceover') ? await videoProvider.generate(job.input)
-                : await textProvider.generate(job.input);
+            : job.tool_key === 'voiceover' ? await audioProvider.generate(job.input)
+                : job.tool_key === 'video' ? await videoProvider.generate(job.input)
+                    : await textProvider.generate(job.input);
         await pool.query(`UPDATE ai_jobs SET status='completed',result=$2,completed_at=now() WHERE id=$1`, [job.id, result]);
     }
     catch (e) {

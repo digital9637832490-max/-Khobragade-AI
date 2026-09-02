@@ -12,18 +12,23 @@ export interface VideoProvider {
   generate(input: Record<string, unknown>): Promise<AiResult>;
 }
 
+export interface AudioProvider {
+  generate(input: Record<string, unknown>): Promise<AiResult>;
+}
+
+function geminiKey() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error('GEMINI_API_KEY missing in Render Environment');
+  return apiKey;
+}
+
 /* =========================
    GEMINI TEXT PROVIDER
+   Chat + Title + Description + Tags
 ========================= */
-
 class GeminiText implements TextProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    if (!apiKey) {
-      throw new Error('GEMINI_API_KEY missing in Render Environment');
-    }
-
+    const apiKey = geminiKey();
     const isChat = input.mode === 'chat';
     const topic = String(input.topic || input.prompt || input.text || input.title || input.message || 'YouTube video');
     const history = Array.isArray(input.history) ? input.history : [];
@@ -55,113 +60,128 @@ Do not use markdown or code fences. Titles must be clickable but not misleading.
           'x-goog-api-key': apiKey,
         },
         body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [
-                {
-                  text: prompt,
-                },
-              ],
-            },
-          ],
+          contents: [{ role: 'user', parts: [{ text: prompt }] }],
           generationConfig: isChat ? { temperature: 0.8 } : { temperature: 0.8, responseMimeType: 'application/json' },
         }),
       }
     );
 
     const data: any = await response.json();
-
     if (!response.ok) {
       console.error('Gemini API error:', data);
-
-      throw new Error(
-        data?.error?.message ||
-        `Gemini API failed with status ${response.status}`
-      );
+      throw new Error(data?.error?.message || `Gemini API failed with status ${response.status}`);
     }
 
-    const text =
-      data?.candidates?.[0]?.content?.parts
-        ?.map((part: any) => part?.text || '')
-        .join('')
-        .trim();
-
-    if (!text) {
-      throw new Error('Gemini returned empty response');
-    }
-
-    if (isChat) {
-      return { answer: text };
-    }
+    const text = data?.candidates?.[0]?.content?.parts?.map((part:any)=>part?.text || '').join('').trim();
+    if (!text) throw new Error('Gemini returned empty response');
+    if (isChat) return { answer: text };
 
     try {
       const result = JSON.parse(text);
-
       return {
         titles: Array.isArray(result.titles) ? result.titles : [],
         description: result.description || '',
         tags: Array.isArray(result.tags) ? result.tags : [],
-        hashtags: Array.isArray(result.hashtags)
-          ? result.hashtags
-          : [],
+        hashtags: Array.isArray(result.hashtags) ? result.hashtags : [],
       };
-    } catch (error) {
-      console.error('Gemini JSON parse error:', text);
-
-      return {
-        titles: [],
-        description: text,
-        tags: [],
-        hashtags: [],
-      };
+    } catch {
+      return { titles: [], description: text, tags: [], hashtags: [] };
     }
   }
 }
 
 /* =========================
-   MOCK IMAGE PROVIDER
-   Abhi unchanged
+   GEMINI FREE-TIER TTS
+   Returns a playable WAV data URL.
 ========================= */
+function pcmToWavBase64(pcmBase64: string, sampleRate = 24000, channels = 1, bitsPerSample = 16) {
+  const pcm = Buffer.from(pcmBase64, 'base64');
+  const header = Buffer.alloc(44);
+  const byteRate = sampleRate * channels * bitsPerSample / 8;
+  const blockAlign = channels * bitsPerSample / 8;
+  header.write('RIFF', 0);
+  header.writeUInt32LE(36 + pcm.length, 4);
+  header.write('WAVE', 8);
+  header.write('fmt ', 12);
+  header.writeUInt32LE(16, 16);
+  header.writeUInt16LE(1, 20);
+  header.writeUInt16LE(channels, 22);
+  header.writeUInt32LE(sampleRate, 24);
+  header.writeUInt32LE(byteRate, 28);
+  header.writeUInt16LE(blockAlign, 32);
+  header.writeUInt16LE(bitsPerSample, 34);
+  header.write('data', 36);
+  header.writeUInt32LE(pcm.length, 40);
+  return Buffer.concat([header, pcm]).toString('base64');
+}
 
+class GeminiAudio implements AudioProvider {
+  async generate(input: Record<string, unknown>): Promise<AiResult> {
+    const apiKey = geminiKey();
+    const text = String(input.text || input.message || input.script || '').trim();
+    if (!text) throw new Error('Voice-over text is required');
+    if (text.length > 12000) throw new Error('Voice-over text is too long');
+    const voice = String(input.voice || 'Kore');
+    const style = String(input.style || 'natural');
+    const speechPrompt = `Synthesize speech in a ${style} style. Speak the following text naturally. Do not add or remove words.\n\nTranscript:\n${text}`;
+
+    const response = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent',
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: speechPrompt }] }],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: { voiceName: voice },
+              },
+            },
+          },
+        }),
+      }
+    );
+
+    const data: any = await response.json();
+    if (!response.ok) {
+      console.error('Gemini TTS error:', data);
+      throw new Error(data?.error?.message || `Gemini TTS failed with status ${response.status}`);
+    }
+
+    const part = data?.candidates?.[0]?.content?.parts?.find((p:any)=>p?.inlineData?.data);
+    const pcmBase64 = part?.inlineData?.data;
+    if (!pcmBase64) throw new Error('Gemini TTS returned no audio. Please try again.');
+    const wavBase64 = pcmToWavBase64(pcmBase64);
+    return {
+      audioDataUrl: `data:audio/wav;base64,${wavBase64}`,
+      mimeType: 'audio/wav',
+      voice,
+      provider: 'gemini',
+      model: 'gemini-3.1-flash-tts-preview',
+    };
+  }
+}
+
+/* Image generation and Veo output generation are intentionally disabled
+   on the Gemini free tier. They remain placeholders so users are not
+   charged for a feature that the free provider cannot deliver. */
 class MockImage implements ImageProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
-    return {
-      previewUrl: null,
-      message:
-        'Configure AI_IMAGE_PROVIDER for real thumbnail generation',
-      input,
-    };
+    throw new Error('AI image generation is not available on the Gemini free tier. No coins charged/refunded automatically.');
   }
 }
-
-/* =========================
-   MOCK VIDEO PROVIDER
-   Abhi unchanged
-========================= */
-
 class MockVideo implements VideoProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
-    return {
-      previewUrl: null,
-      message:
-        'Configure AI_VIDEO_PROVIDER for real rendering',
-      input,
-    };
+    throw new Error('AI video generation is not available on the Gemini free tier. No coins charged/refunded automatically.');
   }
 }
 
-/* =========================
-   PROVIDER EXPORTS
-========================= */
-
-export const textProvider: TextProvider =
-  process.env.AI_TEXT_PROVIDER === 'gemini'
-    ? new GeminiText()
-    : new GeminiText();
-
-export const imageProvider: ImageProvider =
-  new MockImage();
-
-export const videoProvider: VideoProvider =
-  new MockVideo();
+export const textProvider: TextProvider = new GeminiText();
+export const audioProvider: AudioProvider = new GeminiAudio();
+export const imageProvider: ImageProvider = new MockImage();
+export const videoProvider: VideoProvider = new MockVideo();
