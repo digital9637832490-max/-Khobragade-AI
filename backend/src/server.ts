@@ -13,6 +13,13 @@ import { filesRouter } from './routes/files.js';
 
 const app = express();
 
+/*
+  Render runs the app behind a reverse proxy.
+  Trust one proxy so express-rate-limit can correctly
+  use X-Forwarded-For.
+*/
+app.set('trust proxy', 1);
+
 app.use(helmet());
 
 app.use(
