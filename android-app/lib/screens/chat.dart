@@ -16,7 +16,48 @@ class _ChatScreenState extends State<ChatScreen>{
  Future<void> send([String? value,bool speakReply=false])async{final text=(value??input.text).trim();if(text.isEmpty||busy)return;setState((){messages.add({'role':'user','content':text});input.clear();busy=true;});await save();try{final history=messages.length>20?messages.sublist(messages.length-20):messages;final job=await api.request('/ai/chat',method:'POST',body:{'message':text,'history':history});final answer=await waitJob(job['id'].toString());setState(()=>messages.add({'role':'assistant','content':answer}));if(speakReply||voiceMode)await speak(answer,continueVoice:voiceMode);final w=await api.request('/wallet');coins=(w['coinBalance']??coins) as int;}catch(e){final raw=e.toString().replaceFirst('Exception: ','');String msg='⚠️ $raw';if(raw.contains('GEMINI_DAILY_QUOTA')){quotaKind='daily';quotaUntil=DateTime.now().add(const Duration(hours:24));msg='आज की AI उपयोग सीमा पूरी हो गई है। अगले quota reset के बाद फिर कोशिश करें।';}else if(raw.contains('GEMINI_RATE_LIMIT')||raw.contains('429')){quotaKind='minute';quotaUntil=DateTime.now().add(const Duration(minutes:1));msg='अभी बहुत requests आ गई हैं। थोड़ी देर बाद फिर कोशिश करें।';}setState(()=>messages.add({'role':'assistant','content':msg}));}finally{busy=false;await save();if(mounted)setState((){});Future.delayed(const Duration(milliseconds:100),()=>scroll.hasClients?scroll.animateTo(scroll.position.maxScrollExtent,duration:const Duration(milliseconds:250),curve:Curves.easeOut):null);}}
  Future<void> mic([bool autoSend=false])async{if(listening){await speech.stop();if(mounted)setState(()=>listening=false);await Future.delayed(const Duration(milliseconds:120));}final ok=await speech.initialize(onStatus:(s){if(mounted)setState(()=>listening=s=='listening');});if(!ok)return;setState(()=>listening=true);await speech.listen(localeId:'hi_IN',onResult:(r){input.text=r.recognizedWords;input.selection=TextSelection.collapsed(offset:input.text.length);setState((){});if(r.finalResult&&autoSend){final said=r.recognizedWords.trim();if(said.isNotEmpty){speech.stop();if(mounted)setState(()=>listening=false);send(said,true);}}});}
  Future<void> fresh()async{messages=[];await tts.stop();await save();setState((){});}
- @override Widget build(BuildContext context){if(maintenance?['appActive']==true){final end=maintenance?['endAt']!=null?DateTime.tryParse('${maintenance?['endAt']}'):null;final left=end?.difference(DateTime.now());return Scaffold(body:Center(child:Padding(padding:const EdgeInsets.all(28),child:Column(mainAxisSize:MainAxisSize.min,children:[const Text('🛠️',style:TextStyle(fontSize:52)),Text('${maintenance?['title']??'Scheduled Maintenance'}',textAlign:TextAlign.center,style:const TextStyle(fontSize:26,fontWeight:FontWeight.bold)),const SizedBox(height:12),Text('${maintenance?['messageHi']??maintenance?['message']??''}',textAlign:TextAlign.center),if(left!=null&&left.inSeconds>0)...[const SizedBox(height:12),Text('⏳ ${left.inHours.toString().padLeft(2,'0')}:${(left.inMinutes%60).toString().padLeft(2,'0')}:${(left.inSeconds%60).toString().padLeft(2,'0')}',style:const TextStyle(fontSize:22,fontWeight:FontWeight.bold))],if('${maintenance?['contact']??''}'.isNotEmpty)Padding(padding:const EdgeInsets.only(top:12),child:Text('${maintenance?['contact']}')),const SizedBox(height:18),FilledButton(onPressed:load,child:const Text('Try Again'))])));}return Scaffold(backgroundColor:const Color(0xfff8f9fc),appBar:AppBar(backgroundColor:Colors.white,title:const Row(children:[Icon(Icons.auto_awesome,color:Colors.pink),SizedBox(width:8),Text('✨ Khobragade AI',style:TextStyle(fontWeight:FontWeight.w800))]),actions:[Center(child:Text('🪙 $coins',style:const TextStyle(fontWeight:FontWeight.bold))),PopupMenuButton<String>(icon:Icon(voiceGender=='female'?Icons.woman:Icons.man),onSelected:(v){voiceGender=v;save();setState((){});},itemBuilder:(_)=>const[PopupMenuItem(value:'female',child:Text('👩 Female voice')),PopupMenuItem(value:'male',child:Text('👨 Male voice'))]),IconButton(onPressed:fresh,icon:const Icon(Icons.add_comment_outlined))]),body:Column(children:[Expanded(child:messages.isEmpty?_welcome():ListView.builder(controller:scroll,padding:const EdgeInsets.all(14),itemCount:messages.length+(busy?1:0),itemBuilder:(c,i)=>i==messages.length?_bubble({'role':'assistant','content':'•••'}):_bubble(messages[i]))),_composer()]));}
+ @override
+ Widget build(BuildContext context){
+  final isMaintenance=maintenance != null && maintenance!['appActive'] == true;
+  if(isMaintenance){
+   DateTime? end;
+   final endAt=maintenance!['endAt'];
+   if(endAt != null){end=DateTime.tryParse(endAt.toString());}
+   final left=end?.difference(DateTime.now());
+   final title=(maintenance!['title'] ?? 'Scheduled Maintenance').toString();
+   final message=(maintenance!['messageHi'] ?? maintenance!['message'] ?? '').toString();
+   final contact=(maintenance!['contact'] ?? '').toString();
+   return Scaffold(body:Center(child:Padding(padding:const EdgeInsets.all(28),child:Column(mainAxisSize:MainAxisSize.min,children:[
+    const Text('🛠️',style:TextStyle(fontSize:52)),
+    Text(title,textAlign:TextAlign.center,style:const TextStyle(fontSize:26,fontWeight:FontWeight.bold)),
+    const SizedBox(height:12),
+    Text(message,textAlign:TextAlign.center),
+    if(left != null && left.inSeconds > 0)...[
+     const SizedBox(height:12),
+     Text('⏳ ${left.inHours.toString().padLeft(2,'0')}:${(left.inMinutes%60).toString().padLeft(2,'0')}:${(left.inSeconds%60).toString().padLeft(2,'0')}',style:const TextStyle(fontSize:22,fontWeight:FontWeight.bold)),
+    ],
+    if(contact.isNotEmpty)Padding(padding:const EdgeInsets.only(top:12),child:Text(contact)),
+    const SizedBox(height:18),
+    FilledButton(onPressed:load,child:const Text('Try Again')),
+   ]))));
+  }
+  return Scaffold(
+   backgroundColor:const Color(0xfff8f9fc),
+   appBar:AppBar(
+    backgroundColor:Colors.white,
+    title:const Row(children:[Icon(Icons.auto_awesome,color:Colors.pink),SizedBox(width:8),Text('✨ Khobragade AI',style:TextStyle(fontWeight:FontWeight.w800))]),
+    actions:[
+     Center(child:Text('🪙 $coins',style:const TextStyle(fontWeight:FontWeight.bold))),
+     PopupMenuButton<String>(icon:Icon(voiceGender=='female'?Icons.woman:Icons.man),onSelected:(v){voiceGender=v;save();setState((){});},itemBuilder:(_)=>const[PopupMenuItem(value:'female',child:Text('👩 Female voice')),PopupMenuItem(value:'male',child:Text('👨 Male voice'))]),
+     IconButton(onPressed:fresh,icon:const Icon(Icons.add_comment_outlined)),
+    ],
+   ),
+   body:Column(children:[
+    Expanded(child:messages.isEmpty?_welcome():ListView.builder(controller:scroll,padding:const EdgeInsets.all(14),itemCount:messages.length+(busy?1:0),itemBuilder:(c,i)=>i==messages.length?_bubble({'role':'assistant','content':'•••'}):_bubble(messages[i]))),
+    _composer(),
+   ]),
+  );
+ }
  Widget _welcome()=>ListView(padding:const EdgeInsets.all(24),children:[const SizedBox(height:55),const Icon(Icons.auto_awesome,size:56,color:Colors.blue),const SizedBox(height:14),const Text('✨ Khobragade AI',textAlign:TextAlign.center,style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:10),const Text('Ask anything — general questions, study, writing, coding, business, proposals, translation, YouTube and everyday help.',textAlign:TextAlign.center,style:TextStyle(color:Colors.black54,height:1.5))]);
  Widget _bubble(Map<String,String> m){final user=m['role']=='user';return Align(alignment:user?Alignment.centerRight:Alignment.centerLeft,child:Container(margin:const EdgeInsets.only(bottom:14),constraints:const BoxConstraints(maxWidth:620),padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:user?Colors.black:Colors.white,border:user?null:Border.all(color:Colors.blue.shade100),borderRadius:BorderRadius.circular(18)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[SelectableText(m['content']??'',style:TextStyle(color:user?Colors.white:Colors.black87,height:1.45)),if(!user)Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>speak(m['content']??''),icon:const Icon(Icons.volume_up,size:18)),IconButton(onPressed:tts.stop,icon:const Icon(Icons.stop,size:18))])])));}
  Widget _composer()=>SafeArea(top:false,child:Container(color:Colors.white,padding:const EdgeInsets.all(12),child:Container(decoration:BoxDecoration(border:Border.all(color:Colors.blue,width:2),borderRadius:BorderRadius.circular(24)),padding:const EdgeInsets.symmetric(horizontal:4,vertical:3),child:Row(crossAxisAlignment:CrossAxisAlignment.center,children:[IconButton(onPressed:(){},icon:const Icon(Icons.add_circle_outline,color:Colors.green)),Expanded(child:TextField(controller:input,minLines:1,maxLines:5,decoration:const InputDecoration(hintText:'Message ✨ Khobragade AI…',border:InputBorder.none))),IconButton(tooltip:'Voice typing',onPressed:()=>mic(false),icon:Icon(listening?Icons.mic:Icons.mic_none,color:listening?Colors.red:Colors.black87,size:27)),GestureDetector(onTap:()async{if(voiceMode){voiceMode=false;await speech.stop();await tts.stop();await save();if(mounted)setState((){});return;}voiceMode=true;await save();if(mounted)setState((){});await mic(true);},child:AnimatedContainer(duration:const Duration(milliseconds:180),width:48,height:48,decoration:BoxDecoration(shape:BoxShape.circle,gradient:LinearGradient(colors:voiceMode?const[Color(0xff16a34a),Color(0xff2563eb),Color(0xffec4899)]:const[Color(0xff2563eb),Color(0xff60a5fa)]),boxShadow:[BoxShadow(color:Colors.blue.withOpacity(.28),blurRadius:12,offset:const Offset(0,4))]),child:const Icon(Icons.graphic_eq_rounded,color:Colors.white,size:30))),const SizedBox(width:5),IconButton(onPressed:busy?null:()=>send(),icon:const CircleAvatar(backgroundColor:Colors.red,child:Icon(Icons.arrow_upward,color:Colors.white))) ]))));
