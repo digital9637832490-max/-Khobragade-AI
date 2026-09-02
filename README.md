@@ -55,3 +55,11 @@ Secure Admin Panel includes:
 - `/app-cms` — App CMS
 
 All three support create/edit/update, enable/disable, reorder, clone, soft delete/restore, nested content, design, behavior/actions/events and validation/field configuration, with versions and audit logs. See `docs/CMS.md`.
+
+## Gemini Free-Tier Integration
+- Creator AI Chat: Gemini text model
+- AI Title / Description / Tags: Gemini text model
+- Voice-over: Gemini 3.1 Flash TTS Preview, playable WAV output
+- AI image/thumbnail generation: disabled while using Gemini Free Tier (provider requires paid image generation)
+- Photo-to-video/Veo: disabled while using Gemini Free Tier
+- Existing free-daily-limit -> coin-after-limit policy remains in place. Failed paid jobs automatically refund coins.
