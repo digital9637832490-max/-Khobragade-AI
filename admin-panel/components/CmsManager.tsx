@@ -13,7 +13,9 @@ export default function CmsManager({scope}:{scope:Scope}){
  const [content,setContent]=useState('{}'),[design,setDesign]=useState('{}'),[behavior,setBehavior]=useState('{}'),[validation,setValidation]=useState('{}');
  const [msg,setMsg]=useState(''),[showDeleted,setShowDeleted]=useState(false),[query,setQuery]=useState('');
  const load=()=>api(`/admin/cms/${scope}?includeDeleted=${showDeleted}`).then(setItems).catch((e:any)=>setMsg(e.message));
- useEffect(load,[scope,showDeleted]);
+ useEffect(() => {
+  void load();
+}, []);
  const visible=useMemo(()=>items.filter(x=>(x.title+' '+x.item_key+' '+x.item_type).toLowerCase().includes(query.toLowerCase())),[items,query]);
  function choose(x:Item){setSelected(x);setForm({itemType:x.item_type,parentId:x.parent_id,title:x.title,sortOrder:x.sort_order,isEnabled:x.is_enabled});setContent(pretty(x.content));setDesign(pretty(x.design));setBehavior(pretty(x.behavior));setValidation(pretty(x.validation));setMsg('')}
  function fresh(){setSelected(null);setForm(blank(scope));setContent('{}');setDesign('{\n  "visible": true\n}');setBehavior('{}');setValidation('{}');setMsg('New item')}
