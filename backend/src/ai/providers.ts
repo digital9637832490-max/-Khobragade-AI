@@ -24,69 +24,27 @@ class GeminiText implements TextProvider {
       throw new Error('GEMINI_API_KEY missing in Render Environment');
     }
 
-    const topic =
-      String(
-        input.topic ||
-        input.prompt ||
-        input.text ||
-        input.title ||
-        'YouTube video'
-      );
+    const isChat = input.mode === 'chat';
+    const topic = String(input.topic || input.prompt || input.text || input.title || input.message || 'YouTube video');
+    const history = Array.isArray(input.history) ? input.history : [];
+    const prompt = isChat ? `
+You are Creator AI, a professional, friendly AI assistant for YouTube creators.
+Reply directly to the user like a modern chat assistant. Never return JSON unless the user asks for JSON.
+Understand Hindi, Hinglish, Marathi and English and normally answer in the same language as the user.
+Help with titles, descriptions, tags, scripts, SEO, channel ideas, live streams, creator strategy and general questions.
+Use readable formatting and concise useful answers.
 
-    const prompt = `
+Recent conversation:
+${history.map((m:any)=>`${m.role}: ${m.content}`).join('\n')}
+
+User: ${String(input.message || topic)}
+Assistant:` : `
 You are a professional YouTube SEO expert.
-
-User request/topic:
-"${topic}"
-
+User request/topic: "${topic}"
 Generate useful YouTube content in the SAME LANGUAGE as the user's request.
-
-Return ONLY valid JSON.
-Do not use markdown.
-Do not use code fences.
-
-Use exactly this JSON structure:
-
-{
-  "titles": [
-    "title 1",
-    "title 2",
-    "title 3",
-    "title 4",
-    "title 5"
-  ],
-  "description": "Professional YouTube description",
-  "tags": [
-    "tag1",
-    "tag2",
-    "tag3",
-    "tag4",
-    "tag5",
-    "tag6",
-    "tag7",
-    "tag8",
-    "tag9",
-    "tag10"
-  ],
-  "hashtags": [
-    "#hashtag1",
-    "#hashtag2",
-    "#hashtag3",
-    "#hashtag4",
-    "#hashtag5"
-  ]
-}
-
-Rules:
-- Titles should be clickable but not misleading.
-- Keep titles suitable for YouTube.
-- Description should be natural and SEO friendly.
-- Tags should be relevant.
-- Hashtags should be relevant.
-- If the user writes Hindi, answer in Hindi.
-- If the user writes Marathi, answer in Marathi.
-- If the user writes English, answer in English.
-`;
+Return ONLY valid JSON with this structure:
+{"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}
+Do not use markdown or code fences. Titles must be clickable but not misleading. Description must be natural and SEO friendly.`;
 
     const response = await fetch(
       'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
@@ -107,10 +65,7 @@ Rules:
               ],
             },
           ],
-          generationConfig: {
-            temperature: 0.8,
-            responseMimeType: 'application/json',
-          },
+          generationConfig: isChat ? { temperature: 0.8 } : { temperature: 0.8, responseMimeType: 'application/json' },
         }),
       }
     );
@@ -134,6 +89,10 @@ Rules:
 
     if (!text) {
       throw new Error('Gemini returned empty response');
+    }
+
+    if (isChat) {
+      return { answer: text };
     }
 
     try {

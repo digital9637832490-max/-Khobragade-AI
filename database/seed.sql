@@ -10,6 +10,7 @@ INSERT INTO settings(key, value)
 VALUES
 ('tool.thumbnail','{"enabled":true,"coinCost":10,"dailyLimit":50,"maintenance":false}'::jsonb),
 ('tool.title','{"enabled":true,"coinCost":2,"dailyLimit":100,"maintenance":false}'::jsonb),
+('tool.chat','{"enabled":true,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
 ('tool.description','{"enabled":true,"coinCost":3,"dailyLimit":100,"maintenance":false}'::jsonb),
 ('tool.tags','{"enabled":true,"coinCost":2,"dailyLimit":100,"maintenance":false}'::jsonb),
 ('tool.video','{"enabled":true,"coinCost":30,"dailyLimit":20,"maintenance":false}'::jsonb),
