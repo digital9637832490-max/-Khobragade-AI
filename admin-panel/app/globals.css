@@ -6,5 +6,9 @@ nav{display:flex;gap:18px;flex-wrap:wrap}.hero{padding:80px 6%;background:white}
 input,textarea,select{width:100%;padding:12px;border:1px solid #ccc;border-radius:10px;margin:6px 0 14px}footer{padding:30px 6%;background:#111;color:white}
 @media(max-width:760px){.shell{grid-template-columns:1fr}.side{display:none}.hero h1{font-size:34px}}
 
-/* FINAL professional multicolor sidebar: green, yellow, pink, red, blue, black, white */
-.side{background:linear-gradient(180deg,#050507 0%,#111827 100%);color:#fff;border-right:3px solid #2563eb}.side h2{margin-top:0}.side a{position:relative;margin:5px 0;padding:11px 12px;border:1px solid #ffffff12;border-radius:11px;background:#ffffff08;text-transform:capitalize;transition:.18s}.side a:nth-of-type(5n+1){border-left:4px solid #16a34a}.side a:nth-of-type(5n+2){border-left:4px solid #facc15}.side a:nth-of-type(5n+3){border-left:4px solid #ec4899}.side a:nth-of-type(5n+4){border-left:4px solid #ef4444}.side a:nth-of-type(5n){border-left:4px solid #2563eb}.side a:hover{background:#fff;color:#0b0b10;transform:translateX(2px)}
+/* Professional 7-color sidebar: green, yellow, pink, red, blue, black, white */
+.side{background:linear-gradient(160deg,#0b0b10 0 16%,#166534 16% 30%,#1d4ed8 30% 44%,#be123c 44% 57%,#be185d 57% 70%,#a16207 70% 83%,#111827 83% 100%);color:#fff;padding:24px;border-right:4px solid #fff;box-shadow:5px 0 22px #0002}
+.side h2{background:#fff;color:#0b0b10;padding:12px;border-radius:14px;box-shadow:0 4px 12px #0002}
+.side a{display:block;padding:11px 12px!important;margin:6px 0!important;border-radius:12px;background:rgba(0,0,0,.32);color:#fff;border-left:5px solid #fff;backdrop-filter:blur(4px);transition:.18s ease}
+.side a:nth-of-type(7n+1){border-left-color:#22c55e}.side a:nth-of-type(7n+2){border-left-color:#facc15}.side a:nth-of-type(7n+3){border-left-color:#ec4899}.side a:nth-of-type(7n+4){border-left-color:#ef4444}.side a:nth-of-type(7n+5){border-left-color:#3b82f6}.side a:nth-of-type(7n+6){border-left-color:#0b0b10;background:#fff;color:#111}.side a:nth-of-type(7n){border-left-color:#fff}
+.side a:hover{transform:translateX(3px);background:#fff;color:#111}
