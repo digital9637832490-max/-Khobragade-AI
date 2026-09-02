@@ -1,0 +1,1 @@
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.privacy" fallbackTitle="Privacy Policy" fallbackBody="Configure reviewed privacy policy before launch."/>}

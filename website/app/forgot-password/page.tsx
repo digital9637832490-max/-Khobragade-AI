@@ -1,0 +1,1 @@
+export default function Page(){return <main className="main"><div className="card"><h1>Forgot Password</h1><p>Email reset provider hook is ready in the backend. Configure an email provider for production.</p></div></main>}

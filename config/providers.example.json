@@ -1,0 +1,9 @@
+{
+  "aiText": {"provider":"mock","envKey":"AI_TEXT_API_KEY"},
+  "aiImage": {"provider":"mock","envKey":"AI_IMAGE_API_KEY"},
+  "aiVideo": {"provider":"mock","envKey":"AI_VIDEO_API_KEY"},
+  "storage": {"provider":"local","bucketEnv":"STORAGE_BUCKET"},
+  "payment": {"provider":"manual","keyEnv":"PAYMENT_KEY"},
+  "email": {"provider":"console","keyEnv":"EMAIL_API_KEY"},
+  "push": {"provider":"console","keyEnv":"PUSH_API_KEY"}
+}

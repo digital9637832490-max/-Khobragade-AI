@@ -1,0 +1,7 @@
+import {cms} from '../lib/cms';
+export default async function Home(){
+ const [nav,hero,features]=await Promise.all([cms('website','navigation.main'),cms('website','home.hero'),cms('website','home.features')]);
+ const h=hero?.content||{}; const n=nav?.content?.items||[{label:'Features',href:'/features'},{label:'How It Works',href:'/how-it-works'},{label:'Pricing',href:'/pricing'},{label:'Contact',href:'/contact'},{label:'Login',href:'/login'}];
+ const f=features?.content?.items||['AI Thumbnail Maker','AI Title Generator','AI Description Generator','AI Tags + Hashtags','Photo → Video','Coin Wallet'];
+ return <><header><b>Creator Studio</b><nav>{n.map((x:any)=><a key={x.href} href={x.href}>{x.label}</a>)}</nav></header><section className="hero"><h1>{h.heading||'Create better YouTube content with one Creator Studio.'}</h1><p>{h.subheading||'Generate thumbnails, titles, descriptions, tags and photo-to-video projects with a secure coin wallet.'}</p><a className="cta" href={h.primaryCta?.href||'/register'}>{h.primaryCta?.label||'Get Started'}</a><a className="cta" href={h.secondaryCta?.href||'/pricing'}>{h.secondaryCta?.label||'View Pricing'}</a></section><section className="grid">{f.map((x:string)=><div className="card" key={x}><h3>{x}</h3><p>Connected to the same backend used by the Android app.</p></div>)}</section><footer>Creator Studio · Terms · Privacy</footer></>
+}

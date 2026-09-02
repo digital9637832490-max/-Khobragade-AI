@@ -1,0 +1,1 @@
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.terms" fallbackTitle="Terms & Conditions" fallbackBody="Configure reviewed legal terms before launch."/>}

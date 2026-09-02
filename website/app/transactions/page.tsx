@@ -1,0 +1,2 @@
+'use client';import {useEffect,useState} from 'react';import Shell from '../../components/DashboardShell';import {api} from '../../lib/api';
+export default function Page(){const[d,setD]=useState<any[]>([]);useEffect(()=>{api('/wallet/transactions').then(setD).catch(()=>{})},[]);return <Shell><h1>Transaction History</h1>{d.map(x=><div className="card" key={x.id}>{x.type} · {x.coins} coins · Balance {x.balance_after}</div>)}</Shell>}

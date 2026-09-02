@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: creator_studio
+      POSTGRES_USER: creator
+      POSTGRES_PASSWORD: creator_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - creator_studio_pg:/var/lib/postgresql/data
+volumes:
+  creator_studio_pg:

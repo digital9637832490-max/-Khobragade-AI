@@ -1,0 +1,4 @@
+'use client'; import {useState} from 'react';import Shell from '../../components/DashboardShell';import {api} from '../../lib/api';
+export default function Page(){const[input,setInput]=useState('');const[out,setOut]=useState<any>(null);const[msg,setMsg]=useState('');
+async function go(){try{const d=await api('/ai/content',{method:'POST',body:JSON.stringify({topic:input,title:input,text:input,tool:'title'})});setOut(d);setMsg('Job created. Check My Projects / job status.')}catch(e:any){setMsg(e.message)}}
+return <Shell><h1>AI Title Generator</h1><div className="card"><p>Default cost: 2 coins. Admin can change this from settings.</p><textarea placeholder="Enter topic / text" value={input} onChange={e=>setInput(e.target.value)}/><button className="button" onClick={go}>Confirm & Generate</button><p>{msg}</p>{out&&<pre>{JSON.stringify(out,null,2)}</pre>}</div></Shell>}

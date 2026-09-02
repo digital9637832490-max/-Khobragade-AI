@@ -1,0 +1,1 @@
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.how-it-works" fallbackTitle="How It Works" fallbackBody="Register, recharge coins, select a creator tool, confirm cost, generate, preview and save your project."/>}

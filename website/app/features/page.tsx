@@ -1,0 +1,1 @@
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.features" fallbackTitle="Features" fallbackBody="AI Thumbnail, AI Titles, Descriptions, Tags, Photo → Video, Voice-over and project management."/>}

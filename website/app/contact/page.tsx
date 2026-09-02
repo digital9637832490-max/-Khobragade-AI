@@ -1,0 +1,1 @@
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.contact" fallbackTitle="Contact" fallbackBody="Contact Creator Studio support."/>}

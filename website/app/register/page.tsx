@@ -1,0 +1,4 @@
+'use client'; import {useState} from 'react'; import {api} from '../../lib/api';
+export default function Register(){const[n,setN]=useState('');const[e,setE]=useState('');const[p,setP]=useState('');const[msg,setMsg]=useState('');
+async function go(){try{const d=await api('/auth/register',{method:'POST',body:JSON.stringify({name:n,email:e,password:p})});localStorage.setItem('token',d.token);location.href='/dashboard'}catch(x:any){setMsg(x.message)}}
+return <main className="main"><div className="card" style={{maxWidth:460,margin:'40px auto'}}><h1>Register</h1><input placeholder="Name" onChange={x=>setN(x.target.value)}/><input placeholder="Email" onChange={x=>setE(x.target.value)}/><input type="password" placeholder="Password (8+ chars)" onChange={x=>setP(x.target.value)}/><button className="button" onClick={go}>Create account</button><p>{msg}</p></div></main>}

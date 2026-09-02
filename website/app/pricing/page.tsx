@@ -1,0 +1,1 @@
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.pricing" fallbackTitle="Pricing" fallbackBody="Starter ₹99 / 100 coins · Creator ₹399 / 500 · Pro ₹699 / 1,000 · Business ₹2,999 / 5,000."/>}
