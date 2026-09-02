@@ -8,14 +8,15 @@ ON CONFLICT DO NOTHING;
 
 INSERT INTO settings(key, value)
 VALUES
-('tool.thumbnail','{"enabled":true,"coinCost":10,"dailyLimit":50,"maintenance":false}'::jsonb),
-('tool.title','{"enabled":true,"coinCost":2,"dailyLimit":100,"maintenance":false}'::jsonb),
-('tool.chat','{"enabled":true,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
-('tool.description','{"enabled":true,"coinCost":3,"dailyLimit":100,"maintenance":false}'::jsonb),
-('tool.tags','{"enabled":true,"coinCost":2,"dailyLimit":100,"maintenance":false}'::jsonb),
-('tool.video','{"enabled":true,"coinCost":30,"dailyLimit":20,"maintenance":false}'::jsonb),
-('tool.voiceover','{"enabled":true,"coinCost":10,"dailyLimit":50,"maintenance":false}'::jsonb)
-ON CONFLICT(key) DO NOTHING;
+('tool.thumbnail','{"enabled":true,"freeDailyLimit":3,"coinCost":5,"dailyLimit":100,"maintenance":false}'::jsonb),
+('tool.photo','{"enabled":true,"freeDailyLimit":3,"coinCost":5,"dailyLimit":100,"maintenance":false}'::jsonb),
+('tool.title','{"enabled":true,"freeDailyLimit":10,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
+('tool.chat','{"enabled":true,"freeDailyLimit":20,"coinCost":1,"dailyLimit":300,"maintenance":false}'::jsonb),
+('tool.description','{"enabled":true,"freeDailyLimit":10,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
+('tool.tags','{"enabled":true,"freeDailyLimit":10,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
+('tool.video','{"enabled":true,"freeDailyLimit":1,"coinCost":10,"dailyLimit":50,"maintenance":false}'::jsonb),
+('tool.voiceover','{"enabled":true,"freeDailyLimit":3,"coinCost":5,"dailyLimit":100,"maintenance":false}'::jsonb)
+ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value;
 
 INSERT INTO cms_items(scope,item_key,item_type,title,content,design,behavior,validation,sort_order)
 VALUES

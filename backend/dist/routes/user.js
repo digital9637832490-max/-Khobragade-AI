@@ -71,12 +71,15 @@ async function createAiJob(userId, toolKey, input) {
         const cfg = s.rows[0]?.value || { enabled: true, coinCost: 0, maintenance: false };
         if (!cfg.enabled || cfg.maintenance)
             throw new Error('Tool unavailable');
-        if (cfg.dailyLimit) {
-            const used = await c.query(`SELECT count(*) FROM ai_jobs WHERE user_id=$1 AND tool_key=$2 AND created_at >= date_trunc('day', now())`, [userId, toolKey]);
-            if (Number(used.rows[0].count) >= Number(cfg.dailyLimit))
-                throw new Error('Daily tool limit reached');
-        }
-        const cost = Number(cfg.coinCost || 0);
+        const used = await c.query(`SELECT count(*) FROM ai_jobs WHERE user_id=$1 AND tool_key=$2 AND created_at >= date_trunc('day', now())`, [userId, toolKey]);
+        const usedToday = Number(used.rows[0].count || 0);
+        const freeDailyLimit = Math.max(0, Number(cfg.freeDailyLimit || 0));
+        const paidCoinCost = Math.max(0, Number(cfg.coinCost || 0));
+        // Free quota is consumed first. After that, generations continue using coins.
+        // dailyLimit is an optional safety ceiling; 0/missing means no hard daily ceiling.
+        if (Number(cfg.dailyLimit || 0) > 0 && usedToday >= Number(cfg.dailyLimit))
+            throw new Error('Daily safety limit reached');
+        const cost = usedToday < freeDailyLimit ? 0 : paidCoinCost;
         const j = await c.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,$3,$4) RETURNING *`, [userId, toolKey, cost, input]);
         if (cost > 0)
             await changeCoins(c, userId, -cost, `ai:${toolKey}`, 'AI generation', j.rows[0].id);
@@ -92,6 +95,12 @@ catch (e) {
 } });
 userRouter.post('/ai/thumbnail', async (req, res, next) => { try {
     res.status(202).json(await createAiJob(req.auth.id, 'thumbnail', req.body));
+}
+catch (e) {
+    next(e);
+} });
+userRouter.post('/ai/photo', async (req, res, next) => { try {
+    res.status(202).json(await createAiJob(req.auth.id, 'photo', req.body));
 }
 catch (e) {
     next(e);

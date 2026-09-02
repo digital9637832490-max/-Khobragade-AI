@@ -23,7 +23,7 @@ async function processOne() {
         client.release();
     }
     try {
-        const result = job.tool_key === 'thumbnail' ? await imageProvider.generate(job.input)
+        const result = (job.tool_key === 'thumbnail' || job.tool_key === 'photo') ? await imageProvider.generate(job.input)
             : (job.tool_key === 'video' || job.tool_key === 'voiceover') ? await videoProvider.generate(job.input)
                 : await textProvider.generate(job.input);
         await pool.query(`UPDATE ai_jobs SET status='completed',result=$2,completed_at=now() WHERE id=$1`, [job.id, result]);
