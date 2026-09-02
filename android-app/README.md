@@ -1,19 +1,16 @@
-# Creator Studio Android app
+# Khobragade AI Android App
 
-The app UI includes only the useful bottom navigation: Khobragade AI and Home. Voice permissions are already declared.
+The Android app uses the same backend as the website and supports user login/register, dashboard, Khobragade AI chat, microphone input, continuous voice mode, male/female voice selection, maintenance handling and the existing wallet/AI flow.
 
-## Development
-```bash
-flutter pub get
-flutter run --dart-define=API_BASE_URL=http://10.0.2.2:4000/api
-```
+## Production API
+Default API base:
+`https://creator-studio-zzj1.onrender.com/api`
 
-## Release APK
-Use the live HTTPS backend URL:
-```bash
-flutter pub get
-flutter build apk --release --dart-define=API_BASE_URL=https://YOUR-RENDER-BACKEND.onrender.com/api
-```
-APK output: `build/app/outputs/flutter-apk/app-release.apk`
+It can be overridden at build time with:
+`--dart-define=API_BASE_URL=https://your-backend.example/api`
 
-Before Play Store publishing, configure your release signing key and final package/application identity. Do not commit signing passwords or API secrets.
+## APK build
+The repository includes `.github/workflows/android-apk.yml`.
+Open GitHub **Actions** → **Build Khobragade AI APK** → **Run workflow**. After the job succeeds, download the artifact named **Khobragade-AI-Android-APK**.
+
+The workflow creates a clean Flutter Android platform project during CI, applies this app's Dart source, permissions and production API URL, then builds a release APK. This avoids relying on local Flutter/Gradle setup on the laptop.
