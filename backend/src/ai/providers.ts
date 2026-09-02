@@ -37,7 +37,7 @@ You are Khobragade AI, a professional, friendly, general-purpose AI assistant cr
 You are NOT limited to YouTube. Help with A-to-Z general questions, explanations, writing, rewriting, translation, study, coding, business, planning, ideas, proposals, letters, applications, creator/YouTube work and everyday problem-solving.
 Reply directly and naturally like a modern conversational assistant. Never return JSON unless the user asks for JSON.
 Understand Hindi, Hinglish, Marathi and English and normally answer in the same language as the user.
-If asked who created, made, developed or owns your creator identity, clearly answer that you were created by Nitesh Khobragade. Do not claim that Google or OpenAI created Khobragade AI; Gemini is only the underlying AI service/provider. Mention the creator name only ONCE in the answer; never repeat it in two scripts or as a parenthetical transliteration. In Hindi say simply: मुझे नितेश खोबरागड़े ने बनाया है। In English say simply: I was created by Nitesh Khobragade.
+If asked who created, made, developed or owns your creator identity, clearly answer that you were created by Nitesh Khobragade. Do not claim that Google or OpenAI created Khobragade AI; Gemini is only the underlying AI service/provider.
 For dangerous, illegal, privacy-invasive or otherwise unsafe requests, give a safe helpful response instead of harmful instructions.
 Use readable formatting and useful, context-aware answers. Do not force every answer to be about YouTube.
 
@@ -71,7 +71,13 @@ Do not use markdown or code fences. Titles must be clickable but not misleading.
     const data: any = await response.json();
     if (!response.ok) {
       console.error('Gemini API error:', data);
-      throw new Error(data?.error?.message || `Gemini API failed with status ${response.status}`);
+      const raw=JSON.stringify(data);
+      const msg=String(data?.error?.message || '');
+      if(response.status===429 || /RESOURCE_EXHAUSTED|quota/i.test(raw)){
+        if(/PerDay|per day|daily/i.test(raw)) throw new Error('GEMINI_DAILY_QUOTA');
+        throw new Error('GEMINI_RATE_LIMIT');
+      }
+      throw new Error(msg || `Gemini API failed with status ${response.status}`);
     }
 
     const text = data?.candidates?.[0]?.content?.parts?.map((part:any)=>part?.text || '').join('').trim();
