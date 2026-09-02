@@ -36,7 +36,7 @@ VALUES
  '{"items":["AI Thumbnail","AI Title","AI Description","AI Tags","Photo → Video","Voice-over"]}',
  '{"visible":true,"columns":2}','{}','{}',10),
 ('admin','navigation.sidebar','navigation','Admin Sidebar',
- '{"items":["dashboard","users","payments","coin-management","ai-tools","projects","reports","notifications","support","audit-logs","admin-cms","website-cms","app-cms"]}',
+ '{"items":["dashboard","users","payments","coin-management","ai-tools","support","audit-logs","admin-cms","website-cms","app-cms"]}',
  '{"visible":true}','{}','{}',1),
 ('admin','dashboard.cards','collection','Admin Dashboard Cards',
  '{"fields":["total_users","active_users","pending_payments","approved_payments","total_revenue","coins_sold","coins_used","ai_generations","video_jobs","failed_jobs"]}',
@@ -51,6 +51,6 @@ VALUES
 ('website','page.contact','page','Contact Page','{"heading":"Contact","body":"Contact Creator Studio support using the support/contact channel configured by Admin."}','{"visible":true}','{}','{}',130),
 ('website','page.terms','page','Terms Page','{"heading":"Terms & Conditions","body":"Configure reviewed Terms & Conditions from Website CMS before public launch."}','{"visible":true}','{}','{}',140),
 ('website','page.privacy','page','Privacy Page','{"heading":"Privacy Policy","body":"Configure reviewed Privacy Policy from Website CMS before public launch."}','{"visible":true}','{}','{}',150),
-('website','dashboard.navigation','navigation','User Dashboard Navigation','{"items":["dashboard","ai-thumbnail","ai-title","ai-description","ai-tags","photo-video","voice-over","projects","coins","transactions","notifications","support","profile"]}','{"visible":true}','{}','{}',2),
+('website','dashboard.navigation','navigation','User Dashboard Navigation','{"items":["dashboard","chat","ai-thumbnail","ai-title","ai-description","ai-tags","photo-video","voice-over","coins","support","profile"]}','{"visible":true}','{}','{}',2),
 ('app','home.cards','collection','App Home Cards','{"items":[{"title":"Welcome Creator","subtitle":"Coin Balance loads from /wallet"},{"title":"Quick Create","subtitle":"Thumbnail · Title · Video"},{"title":"Recent Projects","subtitle":"Loads from /projects"},{"title":"Notifications","subtitle":"Loads from /notifications"}]}','{"visible":true}','{}','{}',20)
 ON CONFLICT(scope,item_key) DO NOTHING;
