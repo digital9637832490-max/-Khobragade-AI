@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+import '../config.dart';
 import '../api.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -25,6 +27,35 @@ class _LoginScreenState extends State<LoginScreen> {
     email.dispose();
     password.dispose();
     super.dispose();
+  }
+
+  Future<void> googleLogin() async {
+    if (busy) return;
+    if (Config.googleWebClientId.isEmpty) {
+      setState(() => error = 'Google Sign-In is not configured yet.');
+      return;
+    }
+    setState(() { busy = true; error = ''; });
+    try {
+      final google = GoogleSignIn(serverClientId: Config.googleWebClientId, scopes: const ['email', 'profile']);
+      await google.signOut();
+      final account = await google.signIn();
+      if (account == null) return;
+      final auth = await account.authentication;
+      final idToken = auth.idToken;
+      if (idToken == null || idToken.isEmpty) throw Exception('Google login token missing');
+      final data = await api.request('/auth/google', method: 'POST', body: {'idToken': idToken});
+      final token = data['token']?.toString() ?? '';
+      if (token.isEmpty) throw Exception('Login token missing');
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('token', token);
+      if (!mounted) return;
+      widget.onAuthenticated();
+    } catch (e) {
+      if (mounted) setState(() => error = e.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   Future<void> submit() async {
@@ -112,6 +143,15 @@ class _LoginScreenState extends State<LoginScreen> {
                       onPressed: busy ? null : submit,
                       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                       child: Text(busy ? 'Please wait…' : (registerMode ? 'Create Account' : 'Login'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                    ),
+                    const SizedBox(height: 14),
+                    Row(children: const [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('OR', style: TextStyle(color: Colors.black45, fontWeight: FontWeight.w700))), Expanded(child: Divider())]),
+                    const SizedBox(height: 14),
+                    OutlinedButton.icon(
+                      onPressed: busy ? null : googleLogin,
+                      icon: const Text('G', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xff4285F4))),
+                      label: const Text('Continue with Google', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87)),
+                      style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), side: const BorderSide(color: Color(0xffd7dce5)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                     ),
                     const SizedBox(height: 8),
                     TextButton(
