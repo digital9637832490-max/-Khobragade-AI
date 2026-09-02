@@ -1,7 +1,37 @@
 import 'package:flutter/material.dart';
-import 'screens/chat.dart';
 import 'screens/home.dart';
+import 'screens/chat.dart';
+
 void main()=>runApp(const CreatorStudioApp());
-class CreatorStudioApp extends StatelessWidget{const CreatorStudioApp({super.key});@override Widget build(BuildContext context)=>MaterialApp(debugShowCheckedModeBanner:false,title:'Creator Studio',theme:ThemeData(useMaterial3:true,scaffoldBackgroundColor:const Color(0xfff8f9fc),colorScheme:ColorScheme.fromSeed(seedColor:Colors.blue)),home:const AppShell());}
+
+class CreatorStudioApp extends StatelessWidget{
+ const CreatorStudioApp({super.key});
+ @override Widget build(BuildContext context)=>MaterialApp(
+  debugShowCheckedModeBanner:false,
+  title:'Khobragade AI',
+  theme:ThemeData(useMaterial3:true,scaffoldBackgroundColor:const Color(0xfff5f7fb),colorScheme:ColorScheme.fromSeed(seedColor:const Color(0xff245ac6))),
+  home:const AppShell(),
+ );
+}
+
 class AppShell extends StatefulWidget{const AppShell({super.key});@override State<AppShell> createState()=>_AppShellState();}
-class _AppShellState extends State<AppShell>{int index=0;final pages=const[ChatScreen(),HomeScreen()];@override Widget build(BuildContext context)=>Scaffold(body:IndexedStack(index:index,children:pages),bottomNavigationBar:SafeArea(top:false,child:Container(decoration:const BoxDecoration(color:Colors.white,boxShadow:[BoxShadow(color:Color(0x18000000),blurRadius:16,offset:Offset(0,-3))]),padding:const EdgeInsets.fromLTRB(14,8,14,10),child:Row(children:[Expanded(child:_item(0,Icons.auto_awesome,'Khobragade AI',const Color(0xff2563eb))),const SizedBox(width:10),Expanded(child:_item(1,Icons.home_rounded,'Home',const Color(0xff16a34a)))]))));}Widget _item(int i,IconData icon,String label,Color color){final active=index==i;return InkWell(borderRadius:BorderRadius.circular(16),onTap:()=>setState(()=>index=i),child:AnimatedContainer(duration:const Duration(milliseconds:180),height:52,decoration:BoxDecoration(color:active?color:Colors.white,borderRadius:BorderRadius.circular(16),border:Border.all(color:active?color:const Color(0xffe5e7eb))),child:Row(mainAxisAlignment:MainAxisAlignment.center,children:[Icon(icon,color:active?Colors.white:color),const SizedBox(width:7),Flexible(child:Text(label,overflow:TextOverflow.ellipsis,style:TextStyle(color:active?Colors.white:Colors.black87,fontWeight:FontWeight.w800))) ])));}}
+class _AppShellState extends State<AppShell>{
+ int index=0;
+ final pages=const [HomeScreen(),ChatScreen()];
+ @override Widget build(BuildContext context)=>Scaffold(
+  body:IndexedStack(index:index,children:pages),
+  bottomNavigationBar:Container(
+   decoration:const BoxDecoration(color:Colors.white,boxShadow:[BoxShadow(color:Color(0x18000000),blurRadius:18,offset:Offset(0,-3))]),
+   child:SafeArea(top:false,child:NavigationBar(
+    selectedIndex:index,
+    onDestinationSelected:(v)=>setState(()=>index=v),
+    backgroundColor:Colors.white,
+    indicatorColor:const Color(0xffeaf1ff),
+    destinations:const [
+     NavigationDestination(icon:Icon(Icons.dashboard_outlined),selectedIcon:Icon(Icons.dashboard),label:'Dashboard'),
+     NavigationDestination(icon:Icon(Icons.auto_awesome_outlined),selectedIcon:Icon(Icons.auto_awesome),label:'Khobragade AI'),
+    ],
+   )),
+  ),
+ );
+}
