@@ -40,38 +40,49 @@ jobs:
       - name: Recreate compatible Android project
         shell: bash
         run: |
-          rm -rf android
+          set -e
+          rm -rf android test
           flutter create --platforms=android --org com.niteshkhobragade --project-name creator_studio .
+          rm -rf test
 
       - name: Configure Khobragade AI Android app
         shell: python
         run: |
           from pathlib import Path
+          import re
+
           p = Path("android/app/src/main/AndroidManifest.xml")
           s = p.read_text(encoding="utf-8")
 
-          permissions = [
-              '<uses-permission android:name="android.permission.INTERNET" />',
-              '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
-          ]
-          for perm in permissions:
-              if perm not in s:
-                  s = s.replace("<manifest", "<manifest", 1)
+          for permission in ("android.permission.INTERNET", "android.permission.RECORD_AUDIO"):
+              line = f'<uses-permission android:name="{permission}" />'
+              if line not in s:
                   pos = s.find(">") + 1
-                  s = s[:pos] + "\n    " + perm + s[pos:]
+                  s = s[:pos] + "\n    " + line + s[pos:]
 
-          import re
           s = re.sub(r'android:label="[^"]*"', 'android:label="Khobragade AI"', s, count=1)
           p.write_text(s, encoding="utf-8")
+
+          # Fail early if Flutter did not generate the required launcher resources.
+          icon = Path("android/app/src/main/res/mipmap-hdpi/ic_launcher.png")
+          if not icon.exists():
+              raise SystemExit(f"Missing generated launcher icon: {icon}")
 
       - name: Get dependencies
         run: flutter pub get
 
-      - name: Analyze
-        run: flutter analyze --no-fatal-infos
+      - name: Analyze app source
+        run: flutter analyze lib --no-fatal-infos
 
       - name: Build release APK
         run: flutter build apk --release
+
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -e
+          test -f build/app/outputs/flutter-apk/app-release.apk
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
 
       - name: Upload Khobragade AI APK
         uses: actions/upload-artifact@v4
