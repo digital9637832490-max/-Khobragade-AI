@@ -175,21 +175,72 @@ class GeminiAudio implements AudioProvider {
   }
 }
 
-/* Image generation and Veo output generation are intentionally disabled
-   on the Gemini free tier. They remain placeholders so users are not
-   charged for a feature that the free provider cannot deliver. */
-class MockImage implements ImageProvider {
+/* =========================
+   GEMINI IMAGE + VEO VIDEO
+   These are real providers. Google may require billing/model access for
+   image/video generation even when text chat is on the free tier.
+========================= */
+class GeminiImage implements ImageProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
-    throw new Error('AI image generation is not available on the Gemini free tier. No coins charged/refunded automatically.');
+    const apiKey = geminiKey();
+    const prompt = String(input.prompt || input.topic || input.title || input.text || '').trim();
+    if (!prompt) throw new Error('Image prompt is required');
+    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image-preview';
+    const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
+      body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})
+    });
+    const data:any=await response.json();
+    if(!response.ok){
+      const msg=String(data?.error?.message||'');
+      if(response.status===429) throw new Error('GEMINI_RATE_LIMIT');
+      if(/billing|paid|quota|not available/i.test(msg)) throw new Error('IMAGE_PROVIDER_BILLING_REQUIRED');
+      throw new Error(msg||`Gemini image generation failed (${response.status})`);
+    }
+    const parts=data?.candidates?.[0]?.content?.parts||[];
+    const image=parts.find((x:any)=>x?.inlineData?.data);
+    if(!image?.inlineData?.data) throw new Error('Gemini returned no image');
+    const mime=image.inlineData.mimeType||'image/png';
+    return {imageDataUrl:`data:${mime};base64,${image.inlineData.data}`,mimeType:mime,provider:'gemini',model};
   }
 }
-class MockVideo implements VideoProvider {
+class GeminiVideo implements VideoProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
-    throw new Error('AI video generation is not available on the Gemini free tier. No coins charged/refunded automatically.');
+    const apiKey=geminiKey();
+    const prompt=String(input.prompt||input.text||input.title||input.voice||'').trim() ||
+      `Create a ${String(input.style||'cinematic')} video. ${String(input.transition||'')} ${String(input.photos||'')}`;
+    const model=process.env.GEMINI_VIDEO_MODEL||'veo-3.1-lite-generate-preview';
+    const base='https://generativelanguage.googleapis.com/v1beta';
+    const first=await fetch(`${base}/models/${model}:predictLongRunning`,{
+      method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
+      body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,resolution:'720p'}})
+    });
+    const created:any=await first.json();
+    if(!first.ok){
+      const msg=String(created?.error?.message||'');
+      if(first.status===429) throw new Error('GEMINI_RATE_LIMIT');
+      if(/billing|paid|quota|not available/i.test(msg)) throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED');
+      throw new Error(msg||`Veo generation failed (${first.status})`);
+    }
+    const operation=created?.name;
+    if(!operation) throw new Error('Veo did not return an operation id');
+    for(let i=0;i<90;i++){
+      await new Promise(r=>setTimeout(r,10000));
+      const r=await fetch(`${base}/${operation}`,{headers:{'x-goog-api-key':apiKey}});
+      const d:any=await r.json();
+      if(!r.ok) throw new Error(d?.error?.message||'Veo status check failed');
+      if(d.done){
+        if(d.error) throw new Error(d.error.message||'Veo generation failed');
+        const uri=d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+        if(!uri) throw new Error('Veo completed but returned no video');
+        return {videoUri:uri,provider:'gemini',model};
+      }
+    }
+    throw new Error('Video generation timed out. Please try again.');
   }
 }
 
 export const textProvider: TextProvider = new GeminiText();
 export const audioProvider: AudioProvider = new GeminiAudio();
-export const imageProvider: ImageProvider = new MockImage();
-export const videoProvider: VideoProvider = new MockVideo();
+export const imageProvider: ImageProvider = new GeminiImage();
+export const videoProvider: VideoProvider = new GeminiVideo();
