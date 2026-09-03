@@ -31,6 +31,10 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+
       - name: Validate required secrets
         shell: bash
         env:
@@ -89,8 +93,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-36"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}" -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager not found after setup-android"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36"
           python3 - <<'PY'
           from pathlib import Path
           import re
