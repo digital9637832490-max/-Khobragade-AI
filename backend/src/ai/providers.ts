@@ -207,7 +207,7 @@ class GeminiImage implements ImageProvider {
     const apiKey = geminiKey();
     const prompt = String(input.prompt || input.topic || input.title || input.text || '').trim();
     if (!prompt) throw new Error('Image prompt is required');
-    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image-preview';
+    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image';
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})
