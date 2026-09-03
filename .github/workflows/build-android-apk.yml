@@ -77,13 +77,20 @@ jobs:
           p = Path('android/app/src/main/AndroidManifest.xml')
           s = p.read_text(encoding='utf-8')
 
-          for perm in (
+          permissions = (
               '<uses-permission android:name="android.permission.INTERNET" />',
               '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
-          ):
-              if perm not in s:
-                  pos = s.find('>') + 1
-                  s = s[:pos] + '\n    ' + perm + s[pos:]
+          )
+          missing = [perm for perm in permissions if perm not in s]
+          if missing:
+              # IMPORTANT: permissions must be children of <manifest>.
+              # The old workflow inserted them after the XML declaration,
+              # which creates invalid AndroidManifest.xml and breaks assembleRelease.
+              m = re.search(r'<manifest\b[^>]*>', s, flags=re.S)
+              if not m:
+                  raise SystemExit('Opening <manifest> tag not found')
+              insertion = ''.join('\n    ' + perm for perm in missing)
+              s = s[:m.end()] + insertion + s[m.end():]
 
           s = re.sub(r'android:label="[^"]*"', 'android:label="Khobragade AI"', s, count=1)
           p.write_text(s, encoding='utf-8')
