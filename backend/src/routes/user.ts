@@ -62,7 +62,7 @@ async function createAiJob(userId:string, toolKey:string, input:any){
     return j.rows[0];
   });
 }
-userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female')}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender}));}catch(e){next(e)}});
+userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
 userRouter.post('/ai/thumbnail', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'thumbnail',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/photo', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'photo',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/content', async(req,res,next)=>{try{

@@ -1,0 +1,19 @@
+Khobragade AI TOTAL FINAL FIX
+
+Included:
+- Creator identity is locked to exact text: Nitesh Khobragade.
+- Creator questions return deterministic exact creator name.
+- Female persona uses feminine Hindi/Hinglish self-grammar (करती हूँ / बताती हूँ / समझाती हूँ / सकती हूँ).
+- Male persona keeps masculine self-grammar.
+- Android + button now opens file picker (images/PDF/TXT/CSV, max 10 MB).
+- Website/Chrome + button now opens file picker and sends attachment to AI.
+- Gemini chat accepts inline attachments.
+- Previous image/video intent routing preserved.
+- Previous continuous voice mode fixes preserved.
+- Previous in-app update + Share App + permanent signing workflow preserved.
+
+Deployment after upload:
+1) Render backend redeploy (providers.ts + routes/user.ts changed).
+2) Vercel website redeploy (website chat changed).
+3) GitHub Actions APK build (Android chat/pubspec changed).
+4) Install this APK once over current permanently-signed app. Future app releases are detected by the updater.

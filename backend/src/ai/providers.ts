@@ -32,8 +32,16 @@ class GeminiText implements TextProvider {
     const isChat = input.mode === 'chat';
     const topic = String(input.topic || input.prompt || input.text || input.title || input.message || 'YouTube video');
     const history = Array.isArray(input.history) ? input.history : [];
+    const voiceGender = String(input.voiceGender || 'female');
+    const userMessage = String(input.message || topic);
+    if (isChat && /(who (created|made|developed) you|your creator|kisne (banaya|banayi)|किसने (बनाया|बनाई)|creator.*(kaun|who)|निर्माता कौन)/i.test(userMessage)) {
+      return { answer: 'Mujhe Nitesh Khobragade ne banaya hai.' };
+    }
     const prompt = isChat ? `
-You are Khobragade AI, a professional, friendly, general-purpose AI assistant created by Nitesh Khobragade.
+You are ✨ Khobragade AI, a professional, friendly, general-purpose AI assistant.
+Your creator's name is EXACTLY: Nitesh Khobragade. Whenever the creator is mentioned, write and speak exactly "Nitesh Khobragade" in Latin letters. Never translate, transliterate, misspell, shorten, duplicate, or change this name.
+Your selected voice/persona gender for this reply is: ${voiceGender}. If it is female, use feminine first-person grammar in Hindi/Hinglish/Marathi (for example: "करती हूँ", "बताती हूँ", "समझाती हूँ", "कर सकती हूँ") and NEVER masculine self-forms such as "करता हूँ". If it is male, use masculine first-person grammar ("करता हूँ", "बताता हूँ", "समझाता हूँ"). Keep this consistent throughout the entire reply.
+You were created by Nitesh Khobragade.
 You are NOT limited to YouTube. Help with A-to-Z general questions, explanations, writing, rewriting, translation, study, coding, business, planning, ideas, proposals, letters, applications, creator/YouTube work and everyday problem-solving.
 Reply directly and naturally like a modern conversational assistant. Never return JSON unless the user asks for JSON.
 Understand Hindi, Hinglish, Marathi and English and normally answer in the same language as the user.
@@ -62,7 +70,10 @@ Do not use markdown or code fences. Titles must be clickable but not misleading.
           'x-goog-api-key': apiKey,
         },
         body: JSON.stringify({
-          contents: [{ role: 'user', parts: [{ text: prompt }] }],
+          contents: [{ role: 'user', parts: [
+            { text: prompt },
+            ...(isChat && input.attachmentData && input.attachmentMime ? [{ inlineData: { mimeType: String(input.attachmentMime), data: String(input.attachmentData) } }] : [])
+          ] }],
           generationConfig: isChat ? { temperature: 0.8 } : { temperature: 0.8, responseMimeType: 'application/json' },
         }),
       }
@@ -82,7 +93,18 @@ Do not use markdown or code fences. Titles must be clickable but not misleading.
 
     const text = data?.candidates?.[0]?.content?.parts?.map((part:any)=>part?.text || '').join('').trim();
     if (!text) throw new Error('Gemini returned empty response');
-    if (isChat) return { answer: text };
+    if (isChat) {
+      let answer = text
+        .replace(/नितेश\s+खोबरागड़े|नितेश\s+खोब्रागड़े|नितेश\s+खोबरागडे/gi, 'Nitesh Khobragade');
+      if (voiceGender === 'female') {
+        answer = answer
+          .replace(/करता हूँ/g, 'करती हूँ').replace(/करता हूं/g, 'करती हूं')
+          .replace(/बताता हूँ/g, 'बताती हूँ').replace(/बताता हूं/g, 'बताती हूं')
+          .replace(/समझाता हूँ/g, 'समझाती हूँ').replace(/समझाता हूं/g, 'समझाती हूं')
+          .replace(/सकता हूँ/g, 'सकती हूँ').replace(/सकता हूं/g, 'सकती हूं');
+      }
+      return { answer };
+    }
 
     try {
       const result = JSON.parse(text);
