@@ -3,6 +3,9 @@ name: Build Khobragade AI APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: Build Android APK
@@ -151,6 +154,21 @@ jobs:
               raise SystemExit('No Android app Gradle file found')
           PY
 
+      - name: Set unique Android app version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,re
+          p=Path('pubspec.yaml')
+          s=p.read_text(encoding='utf-8')
+          n=int(os.environ['GITHUB_RUN_NUMBER'])
+          s=re.sub(r'^version:\s*.*$', f'version: 1.0.{n}+{n}', s, flags=re.M)
+          p.write_text(s,encoding='utf-8')
+          print(f'Android build number: {n}')
+          PY
+
       - name: Get dependencies
         run: flutter pub get
 
@@ -219,3 +237,18 @@ jobs:
           path: android-app/build/app/outputs/flutter-apk/app-release.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Publish latest APK release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK='build/app/outputs/flutter-apk/app-release.apk'
+          cp "$APK" /tmp/Khobragade-AI.apk
+          TAG="android-v${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" /tmp/Khobragade-AI.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Khobragade AI Android $GITHUB_RUN_NUMBER" \
+            --notes "Khobragade AI Android update build $GITHUB_RUN_NUMBER" \
+            --latest
