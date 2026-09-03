@@ -86,21 +86,33 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [HomeScreen(onLogout: widget.onLogout), const ChatScreen()];
+    final pages = [HomeScreen(onLogout: widget.onLogout, onOpenChat: () => setState(() => index = 1)), const ChatScreen()];
     return Scaffold(
       body: IndexedStack(index: index, children: pages),
       bottomNavigationBar: Container(
-        decoration: const BoxDecoration(color: Colors.white, boxShadow: [BoxShadow(color: Color(0x18000000), blurRadius: 18, offset: Offset(0, -3))]),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          border: Border(top: BorderSide(color: Color(0xffe5e5e5))),
+        ),
         child: SafeArea(
           top: false,
           child: NavigationBar(
             selectedIndex: index,
             onDestinationSelected: (v) => setState(() => index = v),
             backgroundColor: Colors.white,
-            indicatorColor: const Color(0xffeaf1ff),
+            elevation: 0,
+            indicatorColor: const Color(0xffeeeeee),
             destinations: const [
-              NavigationDestination(icon: Icon(Icons.dashboard_outlined), selectedIcon: Icon(Icons.dashboard), label: 'Dashboard'),
-              NavigationDestination(icon: Icon(Icons.auto_awesome_outlined), selectedIcon: Icon(Icons.auto_awesome), label: 'Khobragade AI'),
+              NavigationDestination(
+                icon: Icon(Icons.home_outlined),
+                selectedIcon: Icon(Icons.home_rounded),
+                label: 'Home',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.auto_awesome_outlined),
+                selectedIcon: Icon(Icons.auto_awesome),
+                label: 'Khobragade AI',
+              ),
             ],
           ),
         ),
