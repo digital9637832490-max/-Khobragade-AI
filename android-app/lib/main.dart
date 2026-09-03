@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'screens/home.dart';
 import 'screens/chat.dart';
 import 'screens/login.dart';
+import 'services/app_update_service.dart';
 
 void main() => runApp(const CreatorStudioApp());
 
@@ -74,6 +75,14 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int index = 0;
+
+  @override
+  void initState(){
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if(mounted) AppUpdateService.check(context);
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
