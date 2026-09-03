@@ -1,0 +1,329 @@
+name: Build Khobragade AI APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build Android APK
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: android-app
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Flutter stable
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+
+      - name: Validate required secrets
+        shell: bash
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in GOOGLE_WEB_CLIENT_ID ANDROID_KEYSTORE_BASE64 ANDROID_KEYSTORE_PASSWORD ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing GitHub Actions secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Recreate compatible Android project
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf android test
+          rm -f analysis_options.yaml
+          flutter create --platforms=android --org com.niteshkhobragade --project-name creator_studio .
+          rm -rf test
+          cat > analysis_options.yaml <<'EOF'
+          analyzer:
+            exclude:
+              - build/**
+          EOF
+
+      - name: Configure app manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('android/app/src/main/AndroidManifest.xml')
+          s = p.read_text(encoding='utf-8')
+
+          permissions = (
+              '<uses-permission android:name="android.permission.INTERNET" />',
+              '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+          )
+          missing = [perm for perm in permissions if perm not in s]
+          if missing:
+              # IMPORTANT: permissions must be children of <manifest>.
+              # The old workflow inserted them after the XML declaration,
+              # which creates invalid AndroidManifest.xml and breaks assembleRelease.
+              m = re.search(r'<manifest\b[^>]*>', s, flags=re.S)
+              if not m:
+                  raise SystemExit('Opening <manifest> tag not found')
+              insertion = ''.join('\n    ' + perm for perm in missing)
+              s = s[:m.end()] + insertion + s[m.end():]
+
+          s = re.sub(r'android:label="[^"]*"', 'android:label="Khobragade AI"', s, count=1)
+
+          # Preserve speech recognition + TTS package visibility on Android 11+.
+          if '<queries>' not in s:
+              queries = '''
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
+'''
+              app_pos = s.find('<application')
+              if app_pos < 0:
+                  raise SystemExit('Opening <application> tag not found')
+              s = s[:app_pos] + queries + s[app_pos:]
+
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Apply Khobragade AI launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            src="branding/android/mipmap-$d/ic_launcher.png"
+            dst="android/app/src/main/res/mipmap-$d/ic_launcher.png"
+            test -s "$src"
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+          done
+          # Remove generated adaptive launcher XML so the exact selected logo bitmap is used consistently.
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+
+      - name: Set Android SDK compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_SDK_ROOT:-${ANDROID_HOME:-}}" -type f -name sdkmanager 2>/dev/null | sort | tail -n 1)"
+          fi
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "::error::Android sdkmanager not found after setup-android"
+            exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platforms;android-36"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          kts = Path('android/app/build.gradle.kts')
+          groovy = Path('android/app/build.gradle')
+
+          if kts.exists():
+              s = kts.read_text(encoding='utf-8')
+              s = re.sub(r'compileSdk\s*=\s*flutter\.compileSdkVersion', 'compileSdk = 36', s)
+              s = re.sub(r'minSdk\s*=\s*flutter\.minSdkVersion', 'minSdk = 23', s)
+              kts.write_text(s, encoding='utf-8')
+          elif groovy.exists():
+              s = groovy.read_text(encoding='utf-8')
+              s = re.sub(r'compileSdkVersion\s+flutter\.compileSdkVersion', 'compileSdkVersion 36', s)
+              s = re.sub(r'minSdkVersion\s+flutter\.minSdkVersion', 'minSdkVersion 23', s)
+              groovy.write_text(s, encoding='utf-8')
+          else:
+              raise SystemExit('No Android app Gradle file found')
+          PY
+
+      - name: Restore permanent signing key
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
+          chmod 600 android/app/upload-keystore.jks
+          test -s android/app/upload-keystore.jks
+          cat > android/key.properties <<EOF
+          storePassword=$ANDROID_KEYSTORE_PASSWORD
+          keyPassword=$ANDROID_KEY_PASSWORD
+          keyAlias=$ANDROID_KEY_ALIAS
+          storeFile=upload-keystore.jks
+          EOF
+
+      - name: Configure release signing
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          kts = Path('android/app/build.gradle.kts')
+          groovy = Path('android/app/build.gradle')
+
+          if kts.exists():
+              s = kts.read_text(encoding='utf-8')
+              header = '''import java.util.Properties\nimport java.io.FileInputStream\n\nval keystoreProperties = Properties()\nval keystorePropertiesFile = rootProject.file("key.properties")\nkeystoreProperties.load(FileInputStream(keystorePropertiesFile))\n\n'''
+              if 'val keystoreProperties = Properties()' not in s:
+                  s = header + s
+
+              block = '''\n    signingConfigs {\n        create("release") {\n            keyAlias = keystoreProperties["keyAlias"] as String\n            keyPassword = keystoreProperties["keyPassword"] as String\n            storeFile = keystoreProperties["storeFile"]?.let { file(it) }\n            storePassword = keystoreProperties["storePassword"] as String\n        }\n    }\n'''
+              if 'create("release")' not in s:
+                  marker = '\n    buildTypes {'
+                  if marker not in s:
+                      raise SystemExit('buildTypes block not found in build.gradle.kts')
+                  s = s.replace(marker, block + marker, 1)
+
+              s = re.sub(
+                  r'signingConfig\s*=\s*signingConfigs\.getByName\("debug"\)',
+                  'signingConfig = signingConfigs.getByName("release")',
+                  s,
+              )
+              kts.write_text(s, encoding='utf-8')
+
+          elif groovy.exists():
+              s = groovy.read_text(encoding='utf-8')
+              header = """def keystoreProperties = new Properties()\ndef keystorePropertiesFile = rootProject.file('key.properties')\nkeystoreProperties.load(new FileInputStream(keystorePropertiesFile))\n\n"""
+              if 'def keystoreProperties = new Properties()' not in s:
+                  s = header + s
+
+              block = """\n    signingConfigs {\n        release {\n            keyAlias keystoreProperties['keyAlias']\n            keyPassword keystoreProperties['keyPassword']\n            storeFile file(keystoreProperties['storeFile'])\n            storePassword keystoreProperties['storePassword']\n        }\n    }\n"""
+              if "keystoreProperties['keyAlias']" not in s:
+                  marker = '\n    buildTypes {'
+                  if marker not in s:
+                      raise SystemExit('buildTypes block not found in build.gradle')
+                  s = s.replace(marker, block + marker, 1)
+
+              s = re.sub(r'signingConfig\s+signingConfigs\.debug', 'signingConfig signingConfigs.release', s)
+              groovy.write_text(s, encoding='utf-8')
+          else:
+              raise SystemExit('No Android app Gradle file found')
+          PY
+
+      - name: Set unique Android app version
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import os,re
+          p=Path('pubspec.yaml')
+          s=p.read_text(encoding='utf-8')
+          n=int(os.environ['GITHUB_RUN_NUMBER'])
+          s=re.sub(r'^version:\s*.*$', f'version: 1.0.{n}+{n}', s, flags=re.M)
+          p.write_text(s,encoding='utf-8')
+          print(f'Android build number: {n}')
+          PY
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Analyze app source
+        run: flutter analyze lib --no-fatal-infos
+
+      - name: Build signed release APK
+        env:
+          GOOGLE_WEB_CLIENT_ID: ${{ secrets.GOOGLE_WEB_CLIENT_ID }}
+        run: flutter build apk --release --dart-define=GOOGLE_WEB_CLIENT_ID="$GOOGLE_WEB_CLIENT_ID"
+
+      - name: Verify APK signing and show SHA-1
+        shell: bash
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: |
+          set -euo pipefail
+
+          APK='build/app/outputs/flutter-apk/app-release.apk'
+          test -s "$APK"
+
+          KEY_SHA1=$(keytool -list -v \
+            -keystore android/app/upload-keystore.jks \
+            -alias "$ANDROID_KEY_ALIAS" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" 2>/dev/null \
+            | sed -n 's/^[[:space:]]*SHA1:[[:space:]]*//p' \
+            | head -n 1 \
+            | tr -d ':[:space:]' \
+            | tr '[:lower:]' '[:upper:]')
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+
+          APK_SHA1=$("$APKSIGNER" verify --print-certs "$APK" \
+            | sed -n -E 's/^.*certificate SHA-1 digest:[[:space:]]*([0-9A-Fa-f:]+).*$/\1/p' \
+            | head -n 1 \
+            | tr -d ':[:space:]' \
+            | tr '[:lower:]' '[:upper:]')
+
+          if ! printf '%s' "$KEY_SHA1" | grep -Eq '^[0-9A-F]{40}$'; then
+            echo '::error::Could not read permanent keystore SHA-1'
+            exit 1
+          fi
+          if ! printf '%s' "$APK_SHA1" | grep -Eq '^[0-9A-F]{40}$'; then
+            echo '::error::Could not read APK certificate SHA-1'
+            exit 1
+          fi
+
+          DISPLAY_SHA1=$(printf '%s' "$KEY_SHA1" | sed 's/../&:/g;s/:$//')
+          echo "ANDROID PACKAGE: com.niteshkhobragade.creator_studio"
+          echo "SHA-1: $DISPLAY_SHA1"
+
+          if [ "$KEY_SHA1" != "$APK_SHA1" ]; then
+            echo '::error::APK signing certificate does not match permanent keystore'
+            exit 1
+          fi
+
+          echo 'Signing certificate verified successfully.'
+
+      - name: Upload Khobragade AI APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Khobragade-AI-Android-APK
+          path: android-app/build/app/outputs/flutter-apk/app-release.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish latest APK release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          APK='build/app/outputs/flutter-apk/app-release.apk'
+          cp "$APK" /tmp/Khobragade-AI.apk
+          TAG="android-v${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" /tmp/Khobragade-AI.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Khobragade AI Android $GITHUB_RUN_NUMBER" \
+            --notes "Khobragade AI Android update build $GITHUB_RUN_NUMBER" \
+            --latest
