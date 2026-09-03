@@ -25,9 +25,15 @@ class HomeScreen extends StatelessWidget {
           onPressed: () => _showMenu(context),
           icon: const Icon(Icons.menu_rounded),
         ),
-        title: const Text(
-          'Khobragade AI',
-          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20),
+        title: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(7),
+              child: Image.asset('assets/khobragade_ai_logo.png', width: 30, height: 30, fit: BoxFit.cover),
+            ),
+            const SizedBox(width: 9),
+            const Text('Khobragade AI', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 20)),
+          ],
         ),
         actions: [
           IconButton(
@@ -45,18 +51,9 @@ class HomeScreen extends StatelessWidget {
           children: [
             const SizedBox(height: 30),
             Center(
-              child: Container(
-                width: 62,
-                height: 62,
-                decoration: const BoxDecoration(
-                  color: Color(0xff10a37f),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.auto_awesome_rounded,
-                  color: Colors.white,
-                  size: 32,
-                ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: Image.asset('assets/khobragade_ai_logo.png', width: 78, height: 78, fit: BoxFit.cover),
               ),
             ),
             const SizedBox(height: 20),
@@ -263,9 +260,9 @@ class HomeScreen extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               const ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: Color(0xff10a37f),
-                  child: Icon(Icons.auto_awesome_rounded, color: Colors.white),
+                leading: ClipRRect(
+                  borderRadius: BorderRadius.all(Radius.circular(12)),
+                  child: Image(image: AssetImage('assets/khobragade_ai_logo.png'), width: 42, height: 42, fit: BoxFit.cover),
                 ),
                 title: Text(
                   'Khobragade AI',

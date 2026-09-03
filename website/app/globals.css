@@ -44,3 +44,12 @@ nav.sideNav>a:nth-child(7n){background:linear-gradient(90deg,#111827,#283349)!im
 nav.sideNav>a:hover,nav.sideNav>a.active{background:#fff!important;color:#173b8f!important;border-color:#fff!important;box-shadow:0 8px 18px rgba(0,0,0,.18)!important;transform:none!important}
 nav.sideNav>a .sideIcon{width:25px!important;height:25px!important;flex:0 0 25px!important;border-radius:8px!important;background:rgba(255,255,255,.94)!important;color:#173b8f!important}.sideLogout{width:100%!important;max-width:100%!important;min-width:0!important;height:43px!important;min-height:43px!important;margin:8px 0 0!important;border-radius:10px!important;background:linear-gradient(90deg,#101827,#202b43)!important;color:#fff!important;overflow:hidden!important}
 @media(max-width:760px){.dashboardShell{display:block!important}aside.proSide{width:100%!important;max-width:100%!important;min-width:0!important;height:auto!important}nav.sideNav{display:flex!important;flex-direction:row!important;flex-wrap:nowrap!important;overflow-x:auto!important;overflow-y:hidden!important}nav.sideNav>a{width:auto!important;max-width:none!important;min-width:max-content!important;flex:0 0 auto!important}}
+
+
+/* Khobragade AI exact-logo branding */
+.siteBrand{display:flex;align-items:center;gap:9px}.siteBrand img{width:38px;height:38px;border-radius:10px;object-fit:cover}
+.brandLogo{overflow:hidden}.brandLogo img{width:100%;height:100%;object-fit:cover;display:block}
+.authLogo{display:block;width:86px;height:86px;object-fit:cover;border-radius:22px;margin:0 auto 14px}
+.chatBrand{display:flex;align-items:center;gap:8px}.chatBrand img{width:34px;height:34px;object-fit:cover;border-radius:9px}
+.welcomeLogo{width:88px;height:88px;object-fit:cover;border-radius:24px;display:block;margin:0 auto 12px}
+.avatar img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:block}

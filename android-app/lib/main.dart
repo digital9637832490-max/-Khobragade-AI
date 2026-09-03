@@ -102,15 +102,21 @@ class _AppShellState extends State<AppShell> {
             backgroundColor: Colors.white,
             elevation: 0,
             indicatorColor: const Color(0xffeeeeee),
-            destinations: const [
-              NavigationDestination(
+            destinations: [
+              const NavigationDestination(
                 icon: Icon(Icons.home_outlined),
                 selectedIcon: Icon(Icons.home_rounded),
                 label: 'Home',
               ),
               NavigationDestination(
-                icon: Icon(Icons.auto_awesome_outlined),
-                selectedIcon: Icon(Icons.auto_awesome),
+                icon: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.asset('assets/khobragade_ai_logo.png', width: 26, height: 26, fit: BoxFit.cover),
+                ),
+                selectedIcon: ClipRRect(
+                  borderRadius: BorderRadius.circular(6),
+                  child: Image.asset('assets/khobragade_ai_logo.png', width: 28, height: 28, fit: BoxFit.cover),
+                ),
                 label: 'Khobragade AI',
               ),
             ],

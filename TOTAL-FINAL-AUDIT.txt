@@ -1,0 +1,37 @@
+KHOBRAGADE AI — TOTAL FINAL AUDIT (current base: -Khobragade-AI-main(5).zip)
+
+AUDITED:
+- Android: pubspec, main/auth/login/home/chat/update service/config/API, checked-in Android manifest/Gradle, GitHub APK workflow.
+- Backend source: auth, AI provider, user routes, config/start scripts.
+- Website: layout/home/login/register/dashboard shell/chat/package config.
+- Admin: layout/login/sidebar/package config.
+- Branding/icon/favicon locations.
+
+CONFIRMED WORKING/PRESERVED:
+- file_picker 10.3.10 (Android API 36 compatibility fix retained)
+- image_picker 1.1.2; Camera / Photos(Gallery) / Files flow retained
+- Google OAuth build-time Web Client ID flow retained
+- permanent signing workflow retained
+- auto update/share retained
+- voice + text chat code retained
+- image/file understanding retained
+- image/video routing retained
+- exact creator identity Nitesh Khobragade retained
+- female/male persona handling retained
+
+AUDIT FIXES INCLUDED:
+1. Same exact selected No. 8 logo asset applied to Android UI, Android launcher icon, website branding/favicon, and admin branding/favicon.
+2. APK workflow now reapplies the launcher icon AFTER `flutter create`; without this, `flutter create` deletes any normal android/app icon files.
+3. APK workflow now restores Android 11+ speech recognition/TTS <queries>; the checked-in manifest had them but the generated CI manifest did not.
+4. Checked-in Android compileSdk changed 35 -> 36 for source/local compatibility with current plugin requirements.
+5. Website/Admin metadata updated from generic Creator Studio branding to Khobragade AI.
+6. Added actual favicon/icon assets; none existed in the uploaded current ZIP.
+
+STATIC AUDIT RESULT:
+- No additional confirmed TS/TSX syntax error was found in project source.
+- No additional confirmed Android source error was found by static inspection.
+- Backend `dist/` is generated output and can differ from `src/`; normal deployment should run `npm run build` before `npm start`.
+- No unrelated layout, backend schema, auth routes, payment/wallet, CMS structure, or service behavior was changed.
+
+IMPORTANT:
+This ZIP contains RELATED/CHANGED FILES ONLY. Apply with the same folder paths over the current ZIP/repo.

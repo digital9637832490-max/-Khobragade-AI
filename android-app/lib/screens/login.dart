@@ -116,14 +116,16 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Container(
-                      width: 70,
-                      height: 70,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: LinearGradient(colors: [Color(0xff2563eb), Color(0xff16a34a), Color(0xffec4899)]),
+                    Center(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(22),
+                        child: Image.asset(
+                          'assets/khobragade_ai_logo.png',
+                          width: 86,
+                          height: 86,
+                          fit: BoxFit.cover,
+                        ),
                       ),
-                      child: const Icon(Icons.auto_awesome, color: Colors.white, size: 34),
                     ),
                     const SizedBox(height: 16),
                     const Text('✨ Khobragade AI', textAlign: TextAlign.center, style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900)),
