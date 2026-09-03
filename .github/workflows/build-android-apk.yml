@@ -93,8 +93,37 @@ jobs:
               s = s[:m.end()] + insertion + s[m.end():]
 
           s = re.sub(r'android:label="[^"]*"', 'android:label="Khobragade AI"', s, count=1)
+
+          # Preserve speech recognition + TTS package visibility on Android 11+.
+          if '<queries>' not in s:
+              queries = '''
+    <queries>
+        <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
+    </queries>
+'''
+              app_pos = s.find('<application')
+              if app_pos < 0:
+                  raise SystemExit('Opening <application> tag not found')
+              s = s[:app_pos] + queries + s[app_pos:]
+
           p.write_text(s, encoding='utf-8')
           PY
+
+      - name: Apply Khobragade AI launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            src="branding/android/mipmap-$d/ic_launcher.png"
+            dst="android/app/src/main/res/mipmap-$d/ic_launcher.png"
+            test -s "$src"
+            mkdir -p "$(dirname "$dst")"
+            cp "$src" "$dst"
+          done
+          # Remove generated adaptive launcher XML so the exact selected logo bitmap is used consistently.
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+          rm -f android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 
       - name: Set Android SDK compatibility
         shell: bash
