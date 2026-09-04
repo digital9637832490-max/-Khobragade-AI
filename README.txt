@@ -1,14 +1,12 @@
-Khobragade AI REALTIME LIVE VOICE ENGINE
+REALTIME LIVE VOICE - ANDROID COMPILE SDK FIX
+Build error fixed: flutter_pcm_sound / androidx.exifinterface compileSdk mismatch.
 
-This replaces the full-screen Voice Mode engine with Gemini Live API native audio.
-- Continuous microphone PCM stream (16kHz)
-- Native Gemini audio response (24kHz)
-- Server VAD and interruption/barge-in
-- When user speaks during AI audio, queued playback is cleared
-- Input/output transcription shown on existing multicolor screen
-- No HTTP ai_jobs/TTS loop is used by full-screen Voice Mode
-- Existing small composer mic/text chat remains untouched
+Changed:
+- android-app/pubspec.yaml: flutter_pcm_sound updated.
+- android-app/fix_plugin_compile_sdk.gradle: forces Android library plugins to compileSdk 36.
 
-Changed code files: chat.dart, live_voice.dart, server.ts
-Dependency files: android pubspec.yaml, backend package.json
-Deploy backend after upload, then build APK.
+IMPORTANT FOR EXISTING GITHUB WORKFLOW:
+After `flutter pub get` and BEFORE `flutter build apk`, add exactly:
+echo "apply from: '../fix_plugin_compile_sdk.gradle'" >> android/build.gradle
+
+No targetSdk/minSdk/layout/login/payment/voice behavior changes.

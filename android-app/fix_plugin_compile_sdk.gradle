@@ -1,0 +1,10 @@
+// Khobragade AI realtime voice: force Android library plugins to compile with API 36.
+subprojects { p ->
+    p.afterEvaluate {
+        if (p.hasProperty('android')) {
+            try { p.android.compileSdk = 36 } catch (ignored) {
+                try { p.android.compileSdkVersion 36 } catch (ignored2) {}
+            }
+        }
+    }
+}
