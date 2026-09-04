@@ -101,7 +101,7 @@ try{maintenance=await api.request('/system/status');}catch(_){}try{final w=await
       if(l.startsWith(voiceGender=='female'?'hi':'en')){chosen=v;break;}
     }
   }
-  if(chosen.isNotEmpty){voiceName='${chosen['name']}';await tts.setVoice({'name':'${chosen['name']}','locale':'${chosen['locale']}'});}
+  if(chosen!=null){voiceName='${chosen['name']}';await tts.setVoice({'name':'${chosen['name']}','locale':'${chosen['locale']}'});}
 }catch(_){}await tts.speak(text);if(continueVoice&&voiceMode&&mounted){await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted){voiceRestarting=true;voicePhase.value='listening';await mic(true,0);voiceRestarting=false;}}else if(voiceMode){voicePhase.value='ready';}}
  Future<Map<String,dynamic>> _clientContext()async{
   final now=DateTime.now();
