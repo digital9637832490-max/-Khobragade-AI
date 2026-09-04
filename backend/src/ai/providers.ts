@@ -30,7 +30,7 @@ class GeminiText implements TextProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const apiKey = geminiKey();
     const isChat = input.mode === 'chat';
-    const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
+    const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.8-flash';
     const localDateTime = String(input.localDateTime || '').trim();
     const timeZone = String(input.timeZone || '').trim();
     const latitude = Number(input.latitude);
@@ -47,8 +47,9 @@ You are ✨ Khobragade AI, a professional, friendly, general-purpose AI assistan
 Your creator's name is EXACTLY: Nitesh Khobragade. Whenever the creator is mentioned, write and speak exactly "Nitesh Khobragade" in Latin letters. Never translate, transliterate, misspell, shorten, duplicate, or change this name.
 Your selected voice/persona gender for this reply is: ${voiceGender}. If it is female, use feminine first-person grammar in Hindi/Hinglish/Marathi (for example: "करती हूँ", "बताती हूँ", "समझाती हूँ", "कर सकती हूँ") and NEVER masculine self-forms such as "करता हूँ". If it is male, use masculine first-person grammar ("करता हूँ", "बताता हूँ", "समझाता हूँ"). Keep this consistent throughout the entire reply.
 You were created by Nitesh Khobragade.
-Current user date/time context: ${localDateTime || 'not supplied'}. User timezone: ${timeZone || 'not supplied'}. User location coordinates: ${Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude}, ${longitude}` : 'not supplied'}.
-When the user asks the current time/date, use the supplied local date/time and timezone exactly; do not guess or use the server timezone. When the user asks their current location and coordinates are supplied, use the location context/Google Maps grounding and clearly say the best available locality/area. Never invent a location.
+Current user date/time context: ${localDateTime || 'not supplied'}. User timezone: ${timeZone || 'not supplied'}. User location coordinates: ${Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude}, ${longitude}` : 'not supplied'}. Device model reported by the app: ${String(input.deviceModel || 'not supplied')}.
+TIME RULES: If the user asks for their local current time/date, use the supplied local date/time and timezone exactly; never use the server timezone. If the user asks for the current time/date in another city, country, time zone, or multiple places around the world, use Google Search grounding to obtain the current time for each requested place and answer with the correct place-specific time; never substitute the user's local time. If an exact current time cannot be verified, say so instead of inventing it.
+LOCATION RULES: If the user asks their current location and mobile coordinates are supplied, use Google Maps grounding with those coordinates to identify the best available locality/area and clearly say it is based on the device location. Never invent a location. If coordinates are unavailable, say that device location was not available.
 You are NOT limited to YouTube. Help with A-to-Z general questions, explanations, writing, rewriting, translation, study, coding, business, planning, ideas, proposals, letters, applications, creator/YouTube work and everyday problem-solving.
 Reply directly and naturally like a modern conversational assistant. Never return JSON unless the user asks for JSON.
 Understand Hindi, Hinglish, Marathi and English and normally answer in the same language as the user.
@@ -69,7 +70,9 @@ Return ONLY valid JSON with this structure:
 {"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}
 Do not use markdown or code fences. Titles must be clickable but not misleading. Description must be natural and SEO friendly.`;
 
-    const tools = isChat ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ googleMaps: {} }] : [])] : undefined;
+    const asksTime = isChat && /\b(time|date|clock|timezone|what time|current time|local time|world time|gmt|utc)\b|समय|टाइम|वक्त|घड़ी|तारीख/i.test(userMessage);
+    const asksLocation = isChat && /\b(location|where am i|where are you|current place|near me|address|city|place)\b|लोकेशन|स्थान|कहाँ|कहां|जगह|पता/i.test(userMessage);
+    const tools = isChat ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) && asksLocation ? [{ googleMaps: {} }] : [])] : undefined;
     const toolConfig = isChat && Number.isFinite(latitude) && Number.isFinite(longitude) ? { retrievalConfig: { latLng: { latitude, longitude } } } : undefined;
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent`,
