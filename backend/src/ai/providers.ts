@@ -30,6 +30,11 @@ class GeminiText implements TextProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const apiKey = geminiKey();
     const isChat = input.mode === 'chat';
+    const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
+    const localDateTime = String(input.localDateTime || '').trim();
+    const timeZone = String(input.timeZone || '').trim();
+    const latitude = Number(input.latitude);
+    const longitude = Number(input.longitude);
     const topic = String(input.topic || input.prompt || input.text || input.title || input.message || 'YouTube video');
     const history = Array.isArray(input.history) ? input.history : [];
     const voiceGender = String(input.voiceGender || 'female');
@@ -42,6 +47,8 @@ You are ✨ Khobragade AI, a professional, friendly, general-purpose AI assistan
 Your creator's name is EXACTLY: Nitesh Khobragade. Whenever the creator is mentioned, write and speak exactly "Nitesh Khobragade" in Latin letters. Never translate, transliterate, misspell, shorten, duplicate, or change this name.
 Your selected voice/persona gender for this reply is: ${voiceGender}. If it is female, use feminine first-person grammar in Hindi/Hinglish/Marathi (for example: "करती हूँ", "बताती हूँ", "समझाती हूँ", "कर सकती हूँ") and NEVER masculine self-forms such as "करता हूँ". If it is male, use masculine first-person grammar ("करता हूँ", "बताता हूँ", "समझाता हूँ"). Keep this consistent throughout the entire reply.
 You were created by Nitesh Khobragade.
+Current user date/time context: ${localDateTime || 'not supplied'}. User timezone: ${timeZone || 'not supplied'}. User location coordinates: ${Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude}, ${longitude}` : 'not supplied'}.
+When the user asks the current time/date, use the supplied local date/time and timezone exactly; do not guess or use the server timezone. When the user asks their current location and coordinates are supplied, use the location context/Google Maps grounding and clearly say the best available locality/area. Never invent a location.
 You are NOT limited to YouTube. Help with A-to-Z general questions, explanations, writing, rewriting, translation, study, coding, business, planning, ideas, proposals, letters, applications, creator/YouTube work and everyday problem-solving.
 Reply directly and naturally like a modern conversational assistant. Never return JSON unless the user asks for JSON.
 Understand Hindi, Hinglish, Marathi and English and normally answer in the same language as the user.
@@ -62,8 +69,10 @@ Return ONLY valid JSON with this structure:
 {"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}
 Do not use markdown or code fences. Titles must be clickable but not misleading. Description must be natural and SEO friendly.`;
 
+    const tools = isChat ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ googleMaps: {} }] : [])] : undefined;
+    const toolConfig = isChat && Number.isFinite(latitude) && Number.isFinite(longitude) ? { retrievalConfig: { latLng: { latitude, longitude } } } : undefined;
     const response = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
+      `https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent`,
       {
         method: 'POST',
         headers: {
@@ -75,7 +84,9 @@ Do not use markdown or code fences. Titles must be clickable but not misleading.
             { text: prompt },
             ...(isChat && input.attachmentData && input.attachmentMime ? [{ inlineData: { mimeType: String(input.attachmentMime), data: String(input.attachmentData) } }] : [])
           ] }],
-          generationConfig: isChat ? { temperature: 0.8 } : { temperature: 0.8, responseMimeType: 'application/json' },
+          ...(tools ? { tools } : {}),
+          ...(toolConfig ? { toolConfig } : {}),
+          generationConfig: isChat ? {} : { temperature: 0.8, responseMimeType: 'application/json' },
         }),
       }
     );
@@ -234,9 +245,21 @@ class GeminiVideo implements VideoProvider {
       `Create a ${String(input.style||'cinematic')} video. ${String(input.transition||'')} ${String(input.photos||'')}`;
     const model=process.env.GEMINI_VIDEO_MODEL||'veo-3.1-generate-preview';
     const base='https://generativelanguage.googleapis.com/v1beta';
+    const imageDataUrl = String(input.imageDataUrl || '').trim();
+    let imagePart: any = undefined;
+    if (imageDataUrl.startsWith('data:image/')) {
+      const comma = imageDataUrl.indexOf(',');
+      if (comma > 0) {
+        const mimeType = imageDataUrl.slice(5, imageDataUrl.indexOf(';', 5) > 0 ? imageDataUrl.indexOf(';', 5) : comma);
+        const data = imageDataUrl.slice(comma + 1);
+        if (mimeType && data) imagePart = { inlineData: { mimeType, data } };
+      }
+    }
+    const instance: any = { prompt };
+    if (imagePart) instance.image = imagePart;
     const first=await fetch(`${base}/models/${model}:predictLongRunning`,{
       method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
-      body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,resolution:'720p',aspectRatio:'16:9'}})
+      body:JSON.stringify({instances:[instance],parameters:{numberOfVideos:1,resolution:'720p',aspectRatio:'16:9'}})
     });
     const created:any=await first.json();
     if(!first.ok){
