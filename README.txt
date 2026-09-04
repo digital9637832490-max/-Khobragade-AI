@@ -1,12 +1,12 @@
-REALTIME LIVE VOICE - ANDROID COMPILE SDK FIX
-Build error fixed: flutter_pcm_sound / androidx.exifinterface compileSdk mismatch.
+FIX FOR THE EXACT RED BUILD IN THE SCREENSHOT
 
-Changed:
-- android-app/pubspec.yaml: flutter_pcm_sound updated.
-- android-app/fix_plugin_compile_sdk.gradle: forces Android library plugins to compileSdk 36.
+Cause:
+- flutter_pcm_sound ^3.4.0 does not exist, so pub dependency resolution failed.
+- The real 3.3.3 plugin compiles its Android library against API 33.
 
-IMPORTANT FOR EXISTING GITHUB WORKFLOW:
-After `flutter pub get` and BEFORE `flutter build apk`, add exactly:
-echo "apply from: '../fix_plugin_compile_sdk.gradle'" >> android/build.gradle
+Fixed:
+1. Restored flutter_pcm_sound ^3.3.3.
+2. Workflow now patches ONLY flutter_pcm_sound 3.3.3 Android plugin to compileSdk 36 AFTER `flutter pub get` and BEFORE APK build.
+3. App targetSdk/minSdk, UI, voice behavior, login, payment, logo, image/video are not changed.
 
-No targetSdk/minSdk/layout/login/payment/voice behavior changes.
+Replace these 2 files and rerun GitHub Actions.
