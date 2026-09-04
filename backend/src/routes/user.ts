@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { pool, tx } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { changeCoins } from '../wallet.js';
+import { textProvider } from '../ai/providers.js';
 export const userRouter=Router();
 userRouter.use(requireAuth);
 
@@ -62,6 +63,15 @@ async function createAiJob(userId:string, toolKey:string, input:any){
     return j.rows[0];
   });
 }
+userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
+  const b=z.object({
+    message:z.string().min(1).max(12000),
+    history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),
+    voiceGender:z.enum(['female','male']).default('female')
+  }).parse(req.body);
+  const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender});
+  res.json(result);
+}catch(e){next(e)}});
 userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
 userRouter.post('/ai/thumbnail', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'thumbnail',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/photo', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'photo',req.body));}catch(e){next(e)}});
@@ -71,7 +81,6 @@ userRouter.post('/ai/content', async(req,res,next)=>{try{
 }catch(e){next(e)}});
 userRouter.post('/ai/voiceover', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'voiceover',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/video', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'video',req.body));}catch(e){next(e)}});
-userRouter.get('/ai/video/:id/file', async(req,res,next)=>{try{const q=await pool.query(`SELECT result,status FROM ai_jobs WHERE id=$1 AND user_id=$2 AND tool_key='video'`,[req.params.id,req.auth!.id]);if(!q.rowCount)return res.status(404).json({error:'Video not found'});if(q.rows[0].status!=='completed')return res.status(409).json({error:'Video is not ready yet'});const result=q.rows[0].result||{};const uri=String(result.videoUri||result.videoUrl||'');if(!uri)return res.status(404).json({error:'Generated video URL missing'});const apiKey=process.env.GEMINI_API_KEY;if(!apiKey)throw new Error('GEMINI_API_KEY missing in Render Environment');const upstream=await fetch(uri,{headers:{'x-goog-api-key':apiKey},redirect:'follow'});if(!upstream.ok)throw new Error(`Generated video download failed (${upstream.status})`);const bytes=Buffer.from(await upstream.arrayBuffer());res.setHeader('Content-Type',upstream.headers.get('content-type')||'video/mp4');res.setHeader('Content-Length',String(bytes.length));res.setHeader('Cache-Control','private, max-age=300');res.send(bytes);}catch(e){next(e)}});
 userRouter.get('/jobs', async(req,res,next)=>{try{const q=await pool.query('SELECT * FROM ai_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200',[req.auth!.id]);res.json(q.rows)}catch(e){next(e)}});
 userRouter.get('/jobs/:id', async(req,res,next)=>{
   try{
