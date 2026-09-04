@@ -66,6 +66,38 @@ jobs:
               - build/**
           EOF
 
+      - name: Restore Khobragade AI device-info bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android/app/src/main/kotlin/com/niteshkhobragade/creator_studio
+          cat > android/app/src/main/kotlin/com/niteshkhobragade/creator_studio/MainActivity.kt <<'EOF'
+          package com.niteshkhobragade.creator_studio
+
+          import android.os.Build
+          import io.flutter.embedding.android.FlutterActivity
+          import io.flutter.embedding.engine.FlutterEngine
+          import io.flutter.plugin.common.MethodChannel
+
+          class MainActivity: FlutterActivity() {
+              private val channelName = "com.niteshkhobragade.creator_studio/device"
+
+              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
+                  super.configureFlutterEngine(flutterEngine)
+                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channelName).setMethodCallHandler { call, result ->
+                      when (call.method) {
+                          "getDeviceModel" -> {
+                              val manufacturer = Build.MANUFACTURER.trim()
+                              val model = Build.MODEL.trim()
+                              result.success(listOf(manufacturer, model).filter { it.isNotEmpty() }.joinToString(" "))
+                          }
+                          else -> result.notImplemented()
+                      }
+                  }
+              }
+          }
+          EOF
+
       - name: Configure app manifest
         shell: bash
         run: |
