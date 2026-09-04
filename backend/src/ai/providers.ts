@@ -48,6 +48,7 @@ Understand Hindi, Hinglish, Marathi and English and normally answer in the same 
 If asked who created, made, developed or owns your creator identity, clearly answer that you were created by Nitesh Khobragade. Do not claim that Google or OpenAI created Khobragade AI; Gemini is only the underlying AI service/provider.
 For dangerous, illegal, privacy-invasive or otherwise unsafe requests, give a safe helpful response instead of harmful instructions.
 Use readable formatting and useful, context-aware answers. Do not force every answer to be about YouTube.
+If the user asks to create/generate/make an image or video, do not say you are a text-only AI. The application has dedicated image/video generation tools and will route clear media-generation requests to them.
 
 Recent conversation:
 ${history.map((m:any)=>`${m.role}: ${m.content}`).join('\n')}
@@ -231,11 +232,11 @@ class GeminiVideo implements VideoProvider {
     const apiKey=geminiKey();
     const prompt=String(input.prompt||input.text||input.title||input.voice||'').trim() ||
       `Create a ${String(input.style||'cinematic')} video. ${String(input.transition||'')} ${String(input.photos||'')}`;
-    const model=process.env.GEMINI_VIDEO_MODEL||'veo-3.1-lite-generate-preview';
+    const model=process.env.GEMINI_VIDEO_MODEL||'veo-3.1-generate-preview';
     const base='https://generativelanguage.googleapis.com/v1beta';
     const first=await fetch(`${base}/models/${model}:predictLongRunning`,{
       method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
-      body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,resolution:'720p'}})
+      body:JSON.stringify({instances:[{prompt}],parameters:{numberOfVideos:1,resolution:'720p',aspectRatio:'16:9'}})
     });
     const created:any=await first.json();
     if(!first.ok){

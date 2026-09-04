@@ -82,6 +82,31 @@ userRouter.post('/ai/content', async(req,res,next)=>{try{
 userRouter.post('/ai/voiceover', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'voiceover',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/video', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'video',req.body));}catch(e){next(e)}});
 userRouter.get('/jobs', async(req,res,next)=>{try{const q=await pool.query('SELECT * FROM ai_jobs WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200',[req.auth!.id]);res.json(q.rows)}catch(e){next(e)}});
+userRouter.get('/ai/video/:id/file', async(req,res,next)=>{
+  try{
+    const q=await pool.query('SELECT result FROM ai_jobs WHERE id=$1 AND user_id=$2 AND tool_key=$3 AND status=$4',[req.params.id,req.auth!.id,'video','completed']);
+    if(!q.rowCount) return res.status(404).json({error:'Generated video not found'});
+    const uri=String(q.rows[0]?.result?.videoUri||q.rows[0]?.result?.videoUrl||'');
+    if(!uri) return res.status(404).json({error:'Video file is not available'});
+    const apiKey=process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
+    if(!apiKey) return res.status(500).json({error:'Gemini API key missing'});
+    const r=await fetch(uri,{headers:{'x-goog-api-key':apiKey}});
+    if(!r.ok) return res.status(r.status).json({error:'Generated video could not be downloaded'});
+    res.setHeader('Content-Type',r.headers.get('content-type')||'video/mp4');
+    res.setHeader('Cache-Control','private, max-age=300');
+    if(r.headers.get('content-length')) res.setHeader('Content-Length',r.headers.get('content-length')!);
+    const body=r.body;
+    if(!body) return res.status(502).json({error:'Generated video stream unavailable'});
+    const reader=body.getReader();
+    res.on('close',()=>{try{reader.cancel()}catch{}});
+    for(;;){
+      const {done,value}=await reader.read();
+      if(done) break;
+      res.write(Buffer.from(value));
+    }
+    res.end();
+  }catch(e){next(e)}
+});
 userRouter.get('/jobs/:id', async(req,res,next)=>{
   try{
     const q=await pool.query('SELECT * FROM ai_jobs WHERE id=$1 AND user_id=$2',[req.params.id,req.auth!.id]);

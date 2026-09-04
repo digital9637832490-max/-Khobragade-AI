@@ -2,9 +2,9 @@
 import {useEffect,useMemo,useState} from 'react';
 import {API} from '../lib/api';
 
-const allowed=['chat','dashboard','coins','transactions','projects','notifications','support','profile'];
-const labels:Record<string,string>={chat:'✨ Khobragade AI',dashboard:'Dashboard',coins:'Coins / Recharge',transactions:'Transactions',projects:'Projects',notifications:'Notifications',support:'Support',profile:'Profile'};
-const icons:Record<string,string>={chat:'✦',dashboard:'⌂',coins:'◉',transactions:'↔',projects:'▣',notifications:'●',support:'?',profile:'☺'};
+const allowed=['chat','dashboard','ai-title','ai-description','ai-tags','ai-thumbnail','photo-video','voice-over','coins','transactions','projects','notifications','support','profile'];
+const labels:Record<string,string>={chat:'✨ Khobragade AI',dashboard:'Dashboard','ai-title':'AI Title','ai-description':'AI Description','ai-tags':'AI Tags','ai-thumbnail':'AI Thumbnail','photo-video':'Image & Video','voice-over':'Voice Over',coins:'Coins / Recharge',transactions:'Transactions',projects:'Projects',notifications:'Notifications',support:'Support',profile:'Profile'};
+const icons:Record<string,string>={chat:'✦',dashboard:'⌂','ai-title':'T','ai-description':'D','ai-tags':'#','ai-thumbnail':'▧','photo-video':'◉','voice-over':'♫',coins:'◉',transactions:'↔',projects:'▣',notifications:'●',support:'?',profile:'☺'};
 
 export default function Shell({children}:{children:React.ReactNode}){
  const [cmsLinks,setCmsLinks]=useState<string[]>(allowed),[maintenance,setMaintenance]=useState<any>(null),[now,setNow]=useState(Date.now());
