@@ -9,7 +9,6 @@ import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import '../api.dart';
-import '../config.dart';
 import '../live_voice.dart';
 class ChatScreen extends StatefulWidget{const ChatScreen({super.key});@override State<ChatScreen> createState()=>_ChatScreenState();}
 class _ChatScreenState extends State<ChatScreen>{
