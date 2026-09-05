@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
@@ -11,6 +12,7 @@ import '../api.dart';
 import '../live_voice.dart';
 class ChatScreen extends StatefulWidget{const ChatScreen({super.key});@override State<ChatScreen> createState()=>_ChatScreenState();}
 class _ChatScreenState extends State<ChatScreen>{
+ static const MethodChannel _deviceChannel = MethodChannel('com.niteshkhobragade.creator_studio/device');
  final api=Api(),input=TextEditingController(),scroll=ScrollController(),speech=stt.SpeechToText(),tts=FlutterTts(),imagePicker=ImagePicker();final voicePhase=ValueNotifier<String>('ready'),voiceWords=ValueNotifier<String>('');LiveVoiceSession? liveVoice;String lastVoiceText='';bool voiceSending=false;List<Map<String,String>> messages=[];bool busy=false,listening=false,voiceMode=false,voiceRestarting=false;int coins=0;String voiceGender='female';String voiceName='';List<Map<String,dynamic>> availableVoices=[];String? attachmentName,attachmentMime,attachmentData;Map<String,dynamic>? maintenance;DateTime? quotaUntil;String quotaKind='';Timer? clock;
  @override void initState(){super.initState();clock=Timer.periodic(const Duration(seconds:1),(_){if(mounted&&(quotaUntil!=null||maintenance?['appActive']==true))setState((){});});load();}
  @override void dispose(){clock?.cancel();liveVoice?.dispose();speech.stop();tts.stop();voicePhase.dispose();voiceWords.dispose();input.dispose();scroll.dispose();super.dispose();}
