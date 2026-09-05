@@ -104,6 +104,7 @@ server.on('upgrade', (req, socket, head) => {
     const decoded = jwt.verify(token, config.authSecret) as any;
     if (!decoded?.sub || decoded?.role !== 'user') { socket.destroy(); return; }
     (req as any).voiceGender = u.searchParams.get('gender') === 'male' ? 'male' : 'female';
+    try { const rawContext=u.searchParams.get('context'); (req as any).voiceContext=rawContext?JSON.parse(rawContext):{}; } catch { (req as any).voiceContext={}; }
     liveWss.handleUpgrade(req, socket, head, ws => liveWss.emit('connection', ws, req));
   } catch { socket.destroy(); }
 });
@@ -113,6 +114,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
   if (!apiKey) { client.close(1011, 'Gemini API key missing'); return; }
   const gender = req.voiceGender === 'male' ? 'male' : 'female';
   const voiceName = gender === 'male' ? 'Puck' : 'Kore';
+  let clientContext: any = req.voiceContext || {};
   const gemini = new WebSocket(
     `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(apiKey)}`
   );
@@ -124,7 +126,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
       generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName}}}},
       inputAudioTranscription:{}, outputAudioTranscription:{},
       realtimeInputConfig:{automaticActivityDetection:{disabled:false,prefixPaddingMs:20,silenceDurationMs:220}},
-      systemInstruction:{parts:[{text:`You are ✨ Khobragade AI, created by Nitesh Khobragade. Have a natural realtime spoken conversation. Understand Hindi, Hinglish, Marathi and English and reply in the user's language. ${gender==='female'?'Use feminine Hindi grammar for yourself.':'Use masculine Hindi grammar for yourself.'} Keep spoken answers concise unless detail is requested. Never read aloud emoji, stars, markdown symbols, bullets, URLs, or formatting marks; speak only the natural words. Never say punctuation names. When the user interrupts, stop immediately and listen.`}]}
+      systemInstruction:{parts:[{text:`You are ✨ Khobragade AI, created by Nitesh Khobragade. Have a natural realtime spoken conversation. Understand Hindi, Hinglish, Marathi and English and reply in the user's language. ${gender==='female'?'Use feminine Hindi grammar for yourself.':'Use masculine Hindi grammar for yourself.'} Keep spoken answers concise unless detail is requested. Never read aloud emoji, stars, markdown symbols, bullets, URLs, or formatting marks; speak only the natural words. Never say punctuation names. When the user interrupts, stop immediately and listen. Client context may be supplied before audio; use exact time, timezone, location and device fields when asked and never invent them. Context: ${JSON.stringify(clientContext)}`}]}
     }}));
   });
   gemini.on('message', data => {
@@ -136,7 +138,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
   });
   gemini.on('close', (c,r)=>{ if(client.readyState===WebSocket.OPEN) client.close(c===1000?1000:1011,r.toString().slice(0,100)); });
   gemini.on('error', ()=>{ if(client.readyState===WebSocket.OPEN) client.close(1011,'Live AI connection failed'); });
-  client.on('message', data => { if(gemini.readyState!==WebSocket.OPEN||!ready) pending.push(data); else gemini.send(data); });
+  client.on('message', data => { try { const parsed=JSON.parse(data.toString()); if(parsed?.clientContext && typeof parsed.clientContext==='object'){ clientContext=parsed.clientContext; return; } } catch {} if(gemini.readyState!==WebSocket.OPEN||!ready) pending.push(data); else gemini.send(data); });
   client.on('close', ()=>{ if(gemini.readyState===WebSocket.OPEN||gemini.readyState===WebSocket.CONNECTING) gemini.close(); });
   client.on('error', ()=>{ try{gemini.close();}catch{} });
 });

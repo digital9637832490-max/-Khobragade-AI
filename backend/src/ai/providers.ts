@@ -51,10 +51,10 @@ class GeminiText implements TextProvider {
       const deviceQuestion=/(mobile|phone|device|model|installed|install|मेरा मोबाइल|कौन सा मोबाइल|कौनसे मोबाइल|फोन मॉडल)/i.test(q);
       const locationQuestion=/(where am i|my location|current location|location|meri location|mera location|कहाँ हूँ|मेरी लोकेशन|वर्तमान लोकेशन)/i.test(q);
       const cityZones:Record<string,string>={india:'Asia/Kolkata',mumbai:'Asia/Kolkata',delhi:'Asia/Kolkata',pune:'Asia/Kolkata',nagpur:'Asia/Kolkata',dubai:'Asia/Dubai',london:'Europe/London',paris:'Europe/Paris',berlin:'Europe/Berlin',moscow:'Europe/Moscow',newyork:'America/New_York','new york':'America/New_York',chicago:'America/Chicago',denver:'America/Denver','los angeles':'America/Los_Angeles','san francisco':'America/Los_Angeles',toronto:'America/Toronto','mexico city':'America/Mexico_City','sao paulo':'America/Sao_Paulo',tokyo:'Asia/Tokyo',japan:'Asia/Tokyo',seoul:'Asia/Seoul',beijing:'Asia/Shanghai',china:'Asia/Shanghai',singapore:'Asia/Singapore',bangkok:'Asia/Bangkok',jakarta:'Asia/Jakarta',sydney:'Australia/Sydney',melbourne:'Australia/Melbourne',auckland:'Pacific/Auckland',cairo:'Africa/Cairo',johannesburg:'Africa/Johannesburg',nairobi:'Africa/Nairobi'};
-      const clock=(zone:string,instant?:string)=>{try{const d=instant?new Date(instant):new Date();if(Number.isNaN(d.getTime()))return '';const parts=new Intl.DateTimeFormat('en-IN',{timeZone:zone,hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true,weekday:'long',day:'2-digit',month:'long',year:'numeric'}).formatToParts(d);const g=(t:string)=>parts.find(p=>p.type===t)?.value||'';return `${g('hour')}:${g('minute')}:${g('second')} ${g('dayPeriod')}, ${g('weekday')}, ${g('day')} ${g('month')} ${g('year')}`;}catch{return '';}};
+      const clock=(zone:string)=>{try{const parts=new Intl.DateTimeFormat('en-IN',{timeZone:zone,hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true,weekday:'long',day:'2-digit',month:'long',year:'numeric'}).formatToParts(new Date());const g=(t:string)=>parts.find(p=>p.type===t)?.value||'';return `${g('hour')}:${g('minute')}:${g('second')} ${g('dayPeriod')}, ${g('weekday')}, ${g('day')} ${g('month')} ${g('year')}`;}catch{return '';}};
       if(deviceQuestion&&deviceManufacturer&&deviceModel)return {answer:`यह ऐप आपके ${deviceManufacturer} ${deviceModel} मोबाइल पर installed है.`};
       if(locationQuestion&&locationLabel)return {answer:`आपकी current mobile location: ${locationLabel}.`};
-      if(timeQuestion){let zone=timeZone||'UTC',place='आपकी current location',world=false;for(const [city,z] of Object.entries(cityZones)){if(q.includes(city)){zone=z;place=city;world=true;break;}}const exact=clock(zone,utcNow||localDateTime);if(exact)return {answer:world?`${place} में अभी ${exact} है.`:`आपके mobile के अनुसार अभी ${exact} है.`};if(localDateTime)return {answer:`आपके mobile के अनुसार अभी ${localDateTime} है.`};}
+      if(timeQuestion){let zone=timeZone||'UTC',place='आपकी current location';for(const [city,z] of Object.entries(cityZones)){if(q.includes(city)){zone=z;place=city;break;}}const exact=clock(zone);if(exact)return {answer:`${place} में अभी ${exact} है.`};if(localDateTime)return {answer:`आपके mobile के अनुसार अभी ${localDateTime} है.`};}
     }
     if (isChat && /(who (created|made|developed) you|your creator|kisne (banaya|banayi)|किसने (बनाया|बनाई)|creator.*(kaun|who)|निर्माता कौन)/i.test(userMessage)) {
       return { answer: 'Mujhe Nitesh Khobragade ne banaya hai.' };
@@ -132,10 +132,7 @@ Do not use markdown or code fences. Titles must be clickable but not misleading.
           .replace(/समझाता हूँ/g, 'समझाती हूँ').replace(/समझाता हूं/g, 'समझाती हूं')
           .replace(/सकता हूँ/g, 'सकती हूँ').replace(/सकता हूं/g, 'सकती हूं');
       }
-      const grounding:any=data?.candidates?.[0]?.groundingMetadata;
-      const chunks=Array.isArray(grounding?.groundingChunks)?grounding.groundingChunks:[];
-      const sources=chunks.map((c:any)=>c?.web?.uri?{title:String(c.web.title||c.web.uri),url:String(c.web.uri)}:null).filter(Boolean);
-      if (sources.length) { const unique=sources.filter((v:any,i:number,a:any[])=>a.findIndex((x:any)=>x.url===v.url)===i).slice(0,8); return { answer: answer + '\n\n[[SOURCES]]\n' + unique.map((x:any)=>`• ${x.title} — ${x.url}`).join('\n'), sources: unique }; } return { answer };
+      return { answer };
     }
 
     try {
@@ -239,7 +236,7 @@ class GeminiImage implements ImageProvider {
     const apiKey = geminiKey();
     const prompt = String(input.prompt || input.topic || input.title || input.text || '').trim();
     if (!prompt) throw new Error('Image prompt is required');
-    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image-preview';
+    const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image';
     const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method:'POST', headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
       body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})
@@ -306,7 +303,65 @@ class GeminiVideo implements VideoProvider {
   }
 }
 
-export const textProvider: TextProvider = new GeminiText();
+class OpenRouterText implements TextProvider {
+  async generate(input: Record<string, unknown>): Promise<AiResult> {
+    const key = process.env.OPENROUTER_API_KEY || '';
+    if (!key) throw new Error('OPENROUTER_NOT_CONFIGURED');
+    const isChat = input.mode === 'chat';
+    const model = process.env.OPENROUTER_MODEL || 'openrouter/free';
+    const history = Array.isArray(input.history) ? input.history : [];
+    const message = String(input.message || input.topic || input.prompt || '');
+    const system = isChat
+      ? 'You are Khobragade AI, a helpful multilingual assistant. Answer naturally in the user language. Do not invent current time, location, device information, or search results.'
+      : 'You are a professional YouTube SEO expert. Return valid JSON with titles, description, tags and hashtags.';
+    const messages = [{role:'system',content:system}, ...history.slice(-20).map((m:any)=>({role:m.role==='assistant'?'assistant':'user',content:String(m.content||'')})), {role:'user',content:message}];
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method:'POST', headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`,'HTTP-Referer':process.env.APP_URL||'https://khobragade-ai.app','X-Title':'Khobragade AI'},
+      body:JSON.stringify({model,messages,temperature:isChat?0.4:0.8})
+    });
+    const d:any=await r.json();
+    if(!r.ok) throw new Error(r.status===429?'OPENROUTER_RATE_LIMIT':(d?.error?.message||`OpenRouter failed (${r.status})`));
+    const text=String(d?.choices?.[0]?.message?.content||'').trim();
+    if(!text) throw new Error('OpenRouter returned empty response');
+    if(isChat) return {answer:text,provider:'openrouter',model};
+    try { const x=JSON.parse(text); return {titles:Array.isArray(x.titles)?x.titles:[],description:x.description||'',tags:Array.isArray(x.tags)?x.tags:[],hashtags:Array.isArray(x.hashtags)?x.hashtags:[],provider:'openrouter',model}; }
+    catch { return {titles:[],description:text,tags:[],hashtags:[],provider:'openrouter',model}; }
+  }
+}
+
+class GroqText implements TextProvider {
+  async generate(input: Record<string, unknown>): Promise<AiResult> {
+    const key = process.env.GROQ_API_KEY || '';
+    if (!key) throw new Error('GROQ_NOT_CONFIGURED');
+    const isChat=input.mode==='chat';
+    const model=process.env.GROQ_MODEL||'llama-3.3-70b-versatile';
+    const history=Array.isArray(input.history)?input.history:[];
+    const message=String(input.message||input.topic||input.prompt||'');
+    const messages=[{role:'system',content:isChat?'You are Khobragade AI, a helpful multilingual assistant. Answer naturally in the user language.':'You are a professional YouTube SEO expert. Return valid JSON with titles, description, tags and hashtags.'},...history.slice(-20).map((m:any)=>({role:m.role==='assistant'?'assistant':'user',content:String(m.content||'')})),{role:'user',content:message}];
+    const r=await fetch('https://api.groq.com/openai/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Bearer ${key}`},body:JSON.stringify({model,messages,temperature:isChat?0.4:0.8})});
+    const d:any=await r.json();
+    if(!r.ok) throw new Error(r.status===429?'GROQ_RATE_LIMIT':(d?.error?.message||`Groq failed (${r.status})`));
+    const text=String(d?.choices?.[0]?.message?.content||'').trim(); if(!text) throw new Error('Groq returned empty response');
+    if(isChat) return {answer:text,provider:'groq',model};
+    try { const x=JSON.parse(text); return {titles:Array.isArray(x.titles)?x.titles:[],description:x.description||'',tags:Array.isArray(x.tags)?x.tags:[],hashtags:Array.isArray(x.hashtags)?x.hashtags:[],provider:'groq',model}; }
+    catch { return {titles:[],description:text,tags:[],hashtags:[],provider:'groq',model}; }
+  }
+}
+
+class FallbackText implements TextProvider {
+  private providers: TextProvider[] = [new GeminiText(), new OpenRouterText(), new GroqText()];
+  async generate(input: Record<string, unknown>): Promise<AiResult> {
+    const failures:string[]=[];
+    for(const provider of this.providers){
+      try { return await provider.generate(input); }
+      catch(e:any){ const msg=String(e?.message||e); failures.push(msg); console.warn('AI provider unavailable:',msg); }
+    }
+    const daily=failures.some(x=>/DAILY_QUOTA|RATE_LIMIT|429|quota|limit/i.test(x));
+    throw new Error(daily?'ALL_AI_FREE_LIMITS_EXHAUSTED':'ALL_AI_PROVIDERS_UNAVAILABLE');
+  }
+}
+
+export const textProvider: TextProvider = new FallbackText();
 export const audioProvider: AudioProvider = new GeminiAudio();
 export const imageProvider: ImageProvider = new GeminiImage();
 export const videoProvider: VideoProvider = new GeminiVideo();

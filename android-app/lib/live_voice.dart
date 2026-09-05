@@ -18,7 +18,7 @@ class LiveVoiceSession {
   bool _closed=false;
   LiveVoiceSession({required this.onPhase,required this.onWords,required this.onError});
 
-  Future<void> start(String gender) async {
+  Future<void> start(String gender, [Map<String,dynamic>? clientContext]) async {
     _closed=false;
     if(!await _recorder.hasPermission()) throw Exception('Microphone permission denied');
     await FlutterPcmSound.setup(sampleRate:24000,channelCount:1);
@@ -30,10 +30,11 @@ class LiveVoiceSession {
     final api=Uri.parse(Config.apiBaseUrl);
     final scheme=api.scheme=='https'?'wss':'ws';
     final basePath=api.path.endsWith('/api')?api.path:'${api.path}/api';
-    final uri=Uri(scheme:scheme,host:api.host,port:api.hasPort?api.port:null,path:'$basePath/live-voice',queryParameters:{'token':token,'gender':gender});
+    final qp=<String,String>{'token':token,'gender':gender}; if(clientContext!=null&&clientContext.isNotEmpty) qp['context']=jsonEncode(clientContext); final uri=Uri(scheme:scheme,host:api.host,port:api.hasPort?api.port:null,path:'$basePath/live-voice',queryParameters:qp);
     _ws=WebSocketChannel.connect(uri);
     await _ws!.ready;
     _wsSub=_ws!.stream.listen(_handleMessage,onError:(e)=>_fail('Live voice connection failed'),onDone:(){if(!_closed)_fail('Live voice disconnected');});
+    if (clientContext != null && clientContext.isNotEmpty && !_closed) { _ws?.sink.add(jsonEncode({'clientContext':clientContext})); }
     final stream=await _recorder.startStream(const RecordConfig(encoder:AudioEncoder.pcm16bits,sampleRate:16000,numChannels:1,autoGain:true,echoCancel:true,noiseSuppress:true,streamBufferSize:1280));
     _micSub=stream.listen((chunk){if(!_closed){_ws?.sink.add(jsonEncode({'realtimeInput':{'audio':{'data':base64Encode(chunk),'mimeType':'audio/pcm;rate=16000'}}}));}});
     onPhase('listening');
