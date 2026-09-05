@@ -7,6 +7,26 @@ import { textProvider } from '../ai/providers.js';
 export const userRouter=Router();
 userRouter.use(requireAuth);
 
+userRouter.get('/location/reverse', async(req,res,next)=>{
+  try{
+    const lat=Number(req.query.lat); const lon=Number(req.query.lon);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat < -90||lat>90||lon < -180||lon>180) return res.status(400).json({error:'Invalid coordinates'});
+    const url=`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=18&addressdetails=1&accept-language=en`;
+    const r=await fetch(url,{headers:{'User-Agent':'KhobragadeAI/1.0 (location lookup)'}});
+    if(!r.ok) return res.status(502).json({error:'Location lookup unavailable'});
+    const d:any=await r.json(); const a=d?.address||{};
+    res.json({
+      latitude:lat, longitude:lon,
+      displayName:String(d?.display_name||''),
+      city:String(a.city||a.town||a.village||a.municipality||a.city_district||''),
+      state:String(a.state||''),
+      country:String(a.country||''),
+      countryCode:String(a.country_code||'').toUpperCase(),
+      postcode:String(a.postcode||'')
+    });
+  }catch(e){next(e)}
+});
+
 userRouter.get('/wallet', async(req,res,next)=>{
   try{const q=await pool.query('SELECT coin_balance FROM users WHERE id=$1',[req.auth!.id]);res.json({coinBalance:Number(q.rows[0]?.coin_balance||0)});}catch(e){next(e)}
 });
@@ -73,12 +93,12 @@ userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
     latitude:z.number().min(-90).max(90).optional(),
     longitude:z.number().min(-180).max(180).optional()
   }).parse(req.body);
-  const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,localDateTime:b.localDateTime,timeZone:b.timeZone,latitude:b.latitude,longitude:b.longitude});
+  const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude});
   res.json(result);
 }catch(e){next(e)}});
-userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),localDateTime:z.string().max(120).optional(),timeZone:z.string().max(120).optional(),utcNow:z.string().max(120).optional(),locationLabel:z.string().max(500).optional(),deviceManufacturer:z.string().max(120).optional(),deviceModel:z.string().max(200).optional(),deviceBrand:z.string().max(120).optional(),deviceAndroidVersion:z.string().max(120).optional(),batteryPercent:z.number().min(-1).max(100).optional(),latitude:z.number().min(-90).max(90).optional(),longitude:z.number().min(-180).max(180).optional(),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,localDateTime:b.localDateTime,timeZone:b.timeZone,utcNow:b.utcNow,locationLabel:b.locationLabel,deviceManufacturer:b.deviceManufacturer,deviceModel:b.deviceModel,deviceBrand:b.deviceBrand,deviceAndroidVersion:b.deviceAndroidVersion,batteryPercent:b.batteryPercent,latitude:b.latitude,longitude:b.longitude,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
+userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),localDateTime:z.string().max(120).optional(),timeZone:z.string().max(120).optional(),locationName:z.string().max(255).optional(),latitude:z.number().min(-90).max(90).optional(),longitude:z.number().min(-180).max(180).optional(),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
 userRouter.post('/ai/thumbnail', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'thumbnail',req.body));}catch(e){next(e)}});
-userRouter.post('/ai/photo', async(req,res,next)=>{try{const b=z.object({prompt:z.string().min(1).max(12000),imageDataUrl:z.string().max(20_000_000).optional()}).passthrough().parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'photo',b));}catch(e){next(e)}});
+userRouter.post('/ai/photo', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'photo',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/content', async(req,res,next)=>{try{
   const tool=z.enum(['title','description','tags']).default('title').parse(req.body.tool || 'title');
   res.status(202).json(await createAiJob(req.auth!.id,tool,req.body));
