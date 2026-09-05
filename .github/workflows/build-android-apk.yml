@@ -128,13 +128,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          src="assets/khobragade_ai_logo.png"
-          if [ ! -s "$src" ]; then
-            echo "::error::Missing launcher icon source: $src"
-            exit 1
-          fi
           for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            src="branding/android/mipmap-$d/ic_launcher.png"
             dst="android/app/src/main/res/mipmap-$d/ic_launcher.png"
+            if [ ! -s "$src" ]; then
+              echo "::error::Missing launcher icon: $src"
+              exit 1
+            fi
             mkdir -p "$(dirname "$dst")"
             cp "$src" "$dst"
           done
