@@ -56,10 +56,23 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # Preserve the project's custom native bridge before recreating Android.
+          # flutter create replaces android/, so without this backup the device/time/location bridge is lost.
+          CUSTOM_MAIN_ACTIVITY=android/app/src/main/kotlin/com/niteshkhobragade/creator_studio/MainActivity.kt
+          if [ ! -s "$CUSTOM_MAIN_ACTIVITY" ]; then
+            echo "::error::Missing custom MainActivity: $CUSTOM_MAIN_ACTIVITY"
+            exit 1
+          fi
+          cp "$CUSTOM_MAIN_ACTIVITY" /tmp/KhobragadeMainActivity.kt
+
           rm -rf android test
           rm -f analysis_options.yaml
           flutter create --platforms=android --org com.niteshkhobragade --project-name creator_studio .
           rm -rf test
+
+          # Restore the native bridge required by Khobragade AI.
+          mkdir -p android/app/src/main/kotlin/com/niteshkhobragade/creator_studio
+          cp /tmp/KhobragadeMainActivity.kt android/app/src/main/kotlin/com/niteshkhobragade/creator_studio/MainActivity.kt
           cat > analysis_options.yaml <<'EOF'
           analyzer:
             exclude:
@@ -80,6 +93,8 @@ jobs:
           permissions = (
               '<uses-permission android:name="android.permission.INTERNET" />',
               '<uses-permission android:name="android.permission.RECORD_AUDIO" />',
+              '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />',
+              '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
           )
           missing = [perm for perm in permissions if perm not in s]
           if missing:
