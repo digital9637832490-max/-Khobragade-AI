@@ -13,6 +13,7 @@ import { userRouter } from './routes/user.js';
 import { adminRouter } from './routes/admin.js';
 import { cmsRouter } from './routes/cms.js';
 import { filesRouter } from './routes/files.js';
+import { documentsRouter } from './routes/documents.js';
 
 const app = express();
 
@@ -67,6 +68,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/admin', adminRouter);
 
 app.use('/api', filesRouter);
+app.use('/api', documentsRouter);
 
 app.use('/api', cmsRouter);
 
@@ -104,7 +106,11 @@ server.on('upgrade', (req, socket, head) => {
     const decoded = jwt.verify(token, config.authSecret) as any;
     if (!decoded?.sub || decoded?.role !== 'user') { socket.destroy(); return; }
     (req as any).voiceGender = u.searchParams.get('gender') === 'male' ? 'male' : 'female';
-    try { const rawContext=u.searchParams.get('context'); (req as any).voiceContext=rawContext?JSON.parse(rawContext):{}; } catch { (req as any).voiceContext={}; }
+    (req as any).voiceTimeZone = u.searchParams.get('tz') || 'Asia/Kolkata';
+    (req as any).voiceLocalDateTime = u.searchParams.get('local') || '';
+    (req as any).voiceLocation = u.searchParams.get('loc') || '';
+    (req as any).voiceDevice = u.searchParams.get('device') || '';
+    (req as any).voiceBattery = u.searchParams.get('battery') || '';
     liveWss.handleUpgrade(req, socket, head, ws => liveWss.emit('connection', ws, req));
   } catch { socket.destroy(); }
 });
@@ -114,7 +120,9 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
   if (!apiKey) { client.close(1011, 'Gemini API key missing'); return; }
   const gender = req.voiceGender === 'male' ? 'male' : 'female';
   const voiceName = gender === 'male' ? 'Puck' : 'Kore';
-  let clientContext: any = req.voiceContext || {};
+  const tz = String(req.voiceTimeZone || 'Asia/Kolkata');
+  const localProvided = String(req.voiceLocalDateTime || '');
+  const exactNow = (() => { try { return new Intl.DateTimeFormat('en-IN',{timeZone:tz,hour:'numeric',minute:'2-digit',second:'2-digit',hour12:true,weekday:'long',day:'2-digit',month:'long',year:'numeric'}).format(new Date()); } catch { return localProvided; } })();
   const gemini = new WebSocket(
     `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1beta.GenerativeService.BidiGenerateContent?key=${encodeURIComponent(apiKey)}`
   );
@@ -126,7 +134,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
       generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName}}}},
       inputAudioTranscription:{}, outputAudioTranscription:{},
       realtimeInputConfig:{automaticActivityDetection:{disabled:false,prefixPaddingMs:20,silenceDurationMs:220}},
-      systemInstruction:{parts:[{text:`You are ✨ Khobragade AI, created by Nitesh Khobragade. Have a natural realtime spoken conversation. Understand Hindi, Hinglish, Marathi and English and reply in the user's language. ${gender==='female'?'Use feminine Hindi grammar for yourself.':'Use masculine Hindi grammar for yourself.'} Keep spoken answers concise unless detail is requested. Never read aloud emoji, stars, markdown symbols, bullets, URLs, or formatting marks; speak only the natural words. Never say punctuation names. When the user interrupts, stop immediately and listen. Client context may be supplied before audio; use exact time, timezone, location and device fields when asked and never invent them. Context: ${JSON.stringify(clientContext)}`}]}
+      systemInstruction:{parts:[{text:`You are ✨ Khobragade AI, created by Nitesh Khobragade. Have a natural realtime spoken conversation. Understand Hindi, Hinglish, Marathi and English and reply in the user's language. ${gender==='female'?'Use feminine Hindi grammar for yourself.':'Use masculine Hindi grammar for yourself.'} Keep spoken answers concise unless detail is requested. Never read aloud emoji, stars, markdown symbols, bullets, URLs, or formatting marks; speak only the natural words. Never say punctuation names. The user's exact current local date/time is ${exactNow} in timezone ${tz}; if asked the current time/date, use this value and do not guess. User location context: ${String(req.voiceLocation || 'not available')}. Device context: ${String(req.voiceDevice || 'not available')}. Battery: ${String(req.voiceBattery || 'unknown')}%. When the user interrupts, stop immediately and listen.`}]}
     }}));
   });
   gemini.on('message', data => {
@@ -138,7 +146,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
   });
   gemini.on('close', (c,r)=>{ if(client.readyState===WebSocket.OPEN) client.close(c===1000?1000:1011,r.toString().slice(0,100)); });
   gemini.on('error', ()=>{ if(client.readyState===WebSocket.OPEN) client.close(1011,'Live AI connection failed'); });
-  client.on('message', data => { try { const parsed=JSON.parse(data.toString()); if(parsed?.clientContext && typeof parsed.clientContext==='object'){ clientContext=parsed.clientContext; return; } } catch {} if(gemini.readyState!==WebSocket.OPEN||!ready) pending.push(data); else gemini.send(data); });
+  client.on('message', data => { if(gemini.readyState!==WebSocket.OPEN||!ready) pending.push(data); else gemini.send(data); });
   client.on('close', ()=>{ if(gemini.readyState===WebSocket.OPEN||gemini.readyState===WebSocket.CONNECTING) gemini.close(); });
   client.on('error', ()=>{ try{gemini.close();}catch{} });
 });

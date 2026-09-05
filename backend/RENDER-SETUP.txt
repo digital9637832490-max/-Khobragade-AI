@@ -1,0 +1,12 @@
+Render Backend
+Root Directory: backend
+Build Command: npm install && npm run build
+Start Command: npm start
+Node: 20+
+
+Required:
+DATABASE_URL
+AUTH_SECRET
+GEMINI_API_KEY (or configure fallback provider keys)
+
+See .env.example and ../docs/AI-FALLBACK-AND-FEATURES.md for provider fallback/search/media settings.

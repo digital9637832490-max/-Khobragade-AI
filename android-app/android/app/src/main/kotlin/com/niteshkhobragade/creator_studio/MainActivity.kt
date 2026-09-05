@@ -3,6 +3,7 @@ package com.niteshkhobragade.creator_studio
 import android.location.Address
 import android.location.Geocoder
 import android.os.Build
+import android.os.BatteryManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -22,7 +23,8 @@ class MainActivity : FlutterActivity() {
                     "device" to Build.DEVICE,
                     "product" to Build.PRODUCT,
                     "androidVersion" to Build.VERSION.RELEASE,
-                    "sdkInt" to Build.VERSION.SDK_INT
+                    "sdkInt" to Build.VERSION.SDK_INT,
+                    "batteryPercent" to (getSystemService(BATTERY_SERVICE) as BatteryManager).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
                 ))
                 "reverseGeocode" -> {
                     val lat = call.argument<Double>("latitude")
