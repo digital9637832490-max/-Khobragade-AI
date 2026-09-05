@@ -33,7 +33,7 @@ class LiveVoiceSession {
     final uri=Uri(scheme:scheme,host:api.host,port:api.hasPort?api.port:null,path:'$basePath/live-voice',queryParameters:{'token':token,'gender':gender,if(context?['timeZone']!=null)'tz':'${context?['timeZone']}',if(context?['localDateTime']!=null)'local':'${context?['localDateTime']}',if(context?['locationLabel']!=null)'loc':'${context?['locationLabel']}',if(context?['deviceModel']!=null)'device':'${context?['deviceManufacturer']??''} ${context?['deviceModel']??''} Android ${context?['deviceAndroidVersion']??''}',if(context?['batteryPercent']!=null)'battery':'${context?['batteryPercent']}' });
     _ws=WebSocketChannel.connect(uri);
     await _ws!.ready;
-    _wsSub=_ws!.stream.listen(_handleMessage,onError:(e)=>_fail('Live voice connection failed'),onDone:(){if(!_closed)_fail('Live voice disconnected');});
+    _wsSub=_ws!.stream.listen(_handleMessage,onError:(e)=>_fail('Live voice connection failed: ${e.toString()}'),onDone:(){if(!_closed)_fail('Live voice disconnected');});
     final stream=await _recorder.startStream(const RecordConfig(encoder:AudioEncoder.pcm16bits,sampleRate:16000,numChannels:1,autoGain:true,echoCancel:true,noiseSuppress:true,streamBufferSize:1280));
     _micSub=stream.listen((chunk){if(!_closed){_ws?.sink.add(jsonEncode({'realtimeInput':{'audio':{'data':base64Encode(chunk),'mimeType':'audio/pcm;rate=16000'}}}));}});
     onPhase('listening');
@@ -44,6 +44,7 @@ class LiveVoiceSession {
     try{
       final m=jsonDecode(raw is String?raw:utf8.decode(raw as List<int>)) as Map<String,dynamic>;
       final sc=m['serverContent'] as Map<String,dynamic>?;
+      if(m['error']!=null){_fail(m['error'].toString());return;}
       if(sc==null)return;
       if(sc['interrupted']==true){_resetPlayback();onPhase('listening');}
       final interim=(sc['interimInputTranscription']?['text']??'').toString().trim();

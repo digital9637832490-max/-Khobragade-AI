@@ -18,6 +18,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final email = TextEditingController();
   final password = TextEditingController();
   bool registerMode = false;
+  bool adminMode = false;
   bool busy = false;
   String error = '';
 
@@ -49,6 +50,7 @@ class _LoginScreenState extends State<LoginScreen> {
       if (token.isEmpty) throw Exception('Login token missing');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', token);
+      await prefs.setString('account_role', adminMode ? 'admin' : 'user');
       if (!mounted) return;
       widget.onAuthenticated();
     } catch (e) {
@@ -77,16 +79,17 @@ class _LoginScreenState extends State<LoginScreen> {
     });
     try {
       final data = await api.request(
-        registerMode ? '/auth/register' : '/auth/login',
+        adminMode ? '/admin/login' : (registerMode ? '/auth/register' : '/auth/login'),
         method: 'POST',
-        body: registerMode
+        body: adminMode ? {'email': e, 'password': p} : (registerMode
             ? {'name': n, 'email': e, 'password': p}
-            : {'email': e, 'password': p},
+            : {'email': e, 'password': p}),
       );
       final token = data['token']?.toString() ?? '';
       if (token.isEmpty) throw Exception('Login token missing');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('token', token);
+      await prefs.setString('account_role', adminMode ? 'admin' : 'user');
       if (!mounted) return;
       widget.onAuthenticated();
     } catch (e) {
@@ -130,9 +133,9 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 16),
                     const Text('✨ Khobragade AI', textAlign: TextAlign.center, style: TextStyle(fontSize: 27, fontWeight: FontWeight.w900)),
                     const SizedBox(height: 5),
-                    Text(registerMode ? 'Create your account' : 'Sign in to continue', textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
+                    Text(adminMode ? 'Admin login' : (registerMode ? 'Create your account' : 'Sign in to continue'), textAlign: TextAlign.center, style: const TextStyle(color: Colors.black54)),
                     const SizedBox(height: 24),
-                    if (registerMode) ...[
+                    if (registerMode && !adminMode) ...[
                       TextField(controller: name, textInputAction: TextInputAction.next, decoration: _field('Name', Icons.person_outline)),
                       const SizedBox(height: 12),
                     ],
@@ -144,21 +147,26 @@ class _LoginScreenState extends State<LoginScreen> {
                     FilledButton(
                       onPressed: busy ? null : submit,
                       style: FilledButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
-                      child: Text(busy ? 'Please wait…' : (registerMode ? 'Create Account' : 'Login'), style: const TextStyle(fontWeight: FontWeight.w800)),
+                      child: Text(busy ? 'Please wait…' : (adminMode ? 'Admin Login' : (registerMode ? 'Create Account' : 'Login')), style: const TextStyle(fontWeight: FontWeight.w800)),
                     ),
                     const SizedBox(height: 14),
                     Row(children: const [Expanded(child: Divider()), Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Text('OR', style: TextStyle(color: Colors.black45, fontWeight: FontWeight.w700))), Expanded(child: Divider())]),
                     const SizedBox(height: 14),
-                    OutlinedButton.icon(
+                    if (!adminMode) OutlinedButton.icon(
                       onPressed: busy ? null : googleLogin,
                       icon: const Text('G', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900, color: Color(0xff4285F4))),
                       label: const Text('Continue with Google', style: TextStyle(fontWeight: FontWeight.w800, color: Colors.black87)),
                       style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 15), side: const BorderSide(color: Color(0xffd7dce5)), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15))),
                     ),
                     const SizedBox(height: 8),
-                    TextButton(
+                    if (!adminMode) TextButton(
                       onPressed: busy ? null : () => setState(() { registerMode = !registerMode; error = ''; }),
                       child: Text(registerMode ? 'Already have an account? Login' : 'New user? Create account'),
+                    ),
+                    TextButton.icon(
+                      onPressed: busy ? null : () => setState(() { adminMode = !adminMode; registerMode = false; error = ''; }),
+                      icon: Icon(adminMode ? Icons.person_outline : Icons.admin_panel_settings_outlined),
+                      label: Text(adminMode ? 'User Login' : 'Admin Login'),
                     ),
                   ],
                 ),

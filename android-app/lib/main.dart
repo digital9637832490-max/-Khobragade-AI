@@ -4,6 +4,8 @@ import 'screens/home.dart';
 import 'screens/chat.dart';
 import 'screens/login.dart';
 import 'services/app_update_service.dart';
+import 'api.dart';
+import 'admin_panel.dart';
 
 void main() => runApp(const CreatorStudioApp());
 
@@ -31,6 +33,7 @@ class AuthGate extends StatefulWidget {
 class _AuthGateState extends State<AuthGate> {
   bool loading = true;
   bool loggedIn = false;
+  String role = 'user';
 
   @override
   void initState() {
@@ -41,17 +44,19 @@ class _AuthGateState extends State<AuthGate> {
   Future<void> _check() async {
     final prefs = await SharedPreferences.getInstance();
     if (!mounted) return;
-    setState(() {
-      loggedIn = (prefs.getString('token') ?? '').isNotEmpty;
-      loading = false;
-    });
+    final token=(prefs.getString('token') ?? '');
+    var r=prefs.getString('account_role') ?? 'user';
+    if(token.isNotEmpty){try{final me=await Api().request('/auth/me');r=(me['role']??r).toString();}catch(_){} }
+    setState(() { loggedIn = token.isNotEmpty; role=r; });
+    if(mounted)setState((){loading=false;});
   }
 
   Future<void> _logout() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('token');
     if (!mounted) return;
-    setState(() => loggedIn = false);
+    await prefs.remove('account_role');
+    setState(() { loggedIn = false; role='user'; });
   }
 
   @override
@@ -60,9 +65,9 @@ class _AuthGateState extends State<AuthGate> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
     if (!loggedIn) {
-      return LoginScreen(onAuthenticated: () => setState(() => loggedIn = true));
+      return LoginScreen(onAuthenticated: () => _check());
     }
-    return AppShell(onLogout: _logout);
+    return role == 'admin' ? AdminPanelScreen(onLogout: _logout) : AppShell(onLogout: _logout);
   }
 }
 
