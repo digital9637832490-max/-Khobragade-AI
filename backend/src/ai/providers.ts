@@ -111,6 +111,10 @@ async function openAiCompatibleFallback(input:Record<string,unknown>, system:str
     {name:'openrouter',url:'https://openrouter.ai/api/v1/chat/completions',key:process.env.OPENROUTER_API_KEY||'',model:process.env.OPENROUTER_CHAT_MODEL||'openai/gpt-oss-20b:free'},
     {name:'groq',url:'https://api.groq.com/openai/v1/chat/completions',key:process.env.GROQ_API_KEY||'',model:process.env.GROQ_CHAT_MODEL||'llama-3.3-70b-versatile'},
     {name:'cerebras',url:'https://api.cerebras.ai/v1/chat/completions',key:process.env.CEREBRAS_API_KEY||'',model:process.env.CEREBRAS_CHAT_MODEL||'llama-3.3-70b'},
+    {name:'mistral',url:'https://api.mistral.ai/v1/chat/completions',key:process.env.MISTRAL_API_KEY||'',model:process.env.MISTRAL_CHAT_MODEL||'mistral-small-latest'},
+    {name:'deepseek',url:'https://api.deepseek.com/chat/completions',key:process.env.DEEPSEEK_API_KEY||'',model:process.env.DEEPSEEK_CHAT_MODEL||'deepseek-chat'},
+    {name:'together',url:'https://api.together.xyz/v1/chat/completions',key:process.env.TOGETHER_API_KEY||'',model:process.env.TOGETHER_CHAT_MODEL||'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
+    {name:'xai',url:'https://api.x.ai/v1/chat/completions',key:process.env.XAI_API_KEY||'',model:process.env.XAI_CHAT_MODEL||'grok-3-mini'},
     {name:'pollinations',url:'https://gen.pollinations.ai/v1/chat/completions',key:process.env.POLLINATIONS_API_KEY||'',model:process.env.POLLINATIONS_TEXT_MODEL||'openai'},
   ];
   for(const p of providers){
@@ -118,7 +122,12 @@ async function openAiCompatibleFallback(input:Record<string,unknown>, system:str
     try{
       const headers:any={'Content-Type':'application/json'};
       if(p.key) headers.Authorization=`Bearer ${p.key}`;
-      const r=await fetch(p.url,{method:'POST',headers,body:JSON.stringify({model:p.model,messages:[{role:'system',content:system},{role:'user',content:user}],temperature:0.4})});
+      const attachmentData=String(input.attachmentData||'').trim();
+      const attachmentMime=String(input.attachmentMime||'').trim();
+      const userContent = attachmentData && attachmentMime.startsWith('image/')
+        ? [{type:'text',text:user},{type:'image_url',image_url:{url:`data:${attachmentMime};base64,${attachmentData}`}}]
+        : user;
+      const r=await fetch(p.url,{method:'POST',headers,body:JSON.stringify({model:p.model,messages:[{role:'system',content:system},{role:'user',content:userContent}],temperature:0.4})});
       const d:any=await r.json();
       if(r.ok){const t=String(d?.choices?.[0]?.message?.content||'').trim();if(t)return t;}
       console.warn(`${p.name} fallback failed`,r.status,d?.error?.message||d?.error||'');
@@ -137,7 +146,7 @@ class GeminiText implements TextProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
     const isChat = input.mode === 'chat';
-    const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash';
+    const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
     const localDateTime = String(input.localDateTime || '').trim();
     const timeZone = String(input.timeZone || '').trim();
     const latitude = Number(input.latitude);
@@ -191,7 +200,7 @@ You are a professional YouTube SEO expert. User request/topic: "${topic}". Gener
       }
       try{const result=JSON.parse(text);return{titles:Array.isArray(result.titles)?result.titles:[],description:result.description||'',tags:Array.isArray(result.tags)?result.tags:[],hashtags:Array.isArray(result.hashtags)?result.hashtags:[]};}catch{return{titles:[],description:text,tags:[],hashtags:[]};}
     } catch(primaryError:any) {
-      if(!isChat || input.attachmentData){throw primaryError;}
+      if(!isChat || (input.attachmentData && !String(input.attachmentMime||'').startsWith('image/'))){throw primaryError;}
       const system=`You are Khobragade AI, created by Nitesh Khobragade. Selected voice gender: ${voiceGender}. Use feminine first-person grammar if female. Answer in the user's language. Do not claim you are text-only. For current/search/news requests use only supplied web context and identify sources. Web context:\n${external.text||'none'}`;
       const answer=await openAiCompatibleFallback(input,system,userMessage);
       const normalized=voiceGender==='female'?normalizeFemale(answer):answer;

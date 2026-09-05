@@ -30,6 +30,37 @@ authRouter.post('/login', async (req, res, next) => {
         next(e);
     }
 });
+authRouter.post('/google', async (req, res, next) => {
+    try {
+        const body = z.object({ idToken: z.string().min(20) }).parse(req.body);
+        const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
+        if (!googleClientId)
+            return res.status(503).json({ error: 'Google login is not configured' });
+        const verify = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(body.idToken)}`);
+        if (!verify.ok)
+            return res.status(401).json({ error: 'Invalid Google login' });
+        const profile = await verify.json();
+        if (profile.aud !== googleClientId || profile.email_verified !== 'true' || !profile.email)
+            return res.status(401).json({ error: 'Google account verification failed' });
+        const email = String(profile.email).toLowerCase();
+        const name = String(profile.name || email.split('@')[0]).slice(0, 120);
+        let q = await pool.query('SELECT * FROM users WHERE email=lower($1)', [email]);
+        let u = q.rows[0];
+        if (!u) {
+            // Keep schema compatibility: OAuth users receive a random unusable password hash.
+            const randomSecret = `google-oauth:${profile.sub}:${crypto.randomUUID()}`;
+            const hash = await bcrypt.hash(randomSecret, 12);
+            q = await pool.query('INSERT INTO users(name,email,password_hash) VALUES($1,lower($2),$3) RETURNING *', [name, email, hash]);
+            u = q.rows[0];
+        }
+        if (u.status !== 'active')
+            return res.status(403).json({ error: 'Account blocked' });
+        res.json({ token: signToken(u.id, 'user'), user: { id: u.id, name: u.name, email: u.email, coinBalance: u.coin_balance } });
+    }
+    catch (e) {
+        next(e);
+    }
+});
 authRouter.post('/forgot-password', async (req, res) => {
     res.json({ ok: true, message: 'Password reset provider hook ready. Configure email provider before production.' });
 });

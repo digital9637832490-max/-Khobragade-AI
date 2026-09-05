@@ -17,6 +17,19 @@ const itemSchema = z.object({
     sortOrder: z.number().int().default(0),
     isEnabled: z.boolean().default(true),
 });
+// Public system status used by Website and Android maintenance screens.
+cmsRouter.get('/system/status', async (_req, res, next) => {
+    try {
+        const q = await pool.query("SELECT value FROM settings WHERE key='system.maintenance'");
+        const cfg = q.rows[0]?.value || { websiteEnabled: false, appEnabled: false, title: 'Scheduled Maintenance', message: 'We are improving the service. Please try again shortly.', startAt: null, endAt: null, contact: '' };
+        const now = Date.now(), start = cfg.startAt ? Date.parse(cfg.startAt) : null, end = cfg.endAt ? Date.parse(cfg.endAt) : null;
+        const scheduledActive = (!start || now >= start) && (!end || now < end);
+        res.json({ ...cfg, websiteActive: !!cfg.websiteEnabled && scheduledActive, appActive: !!cfg.appEnabled && scheduledActive, serverTime: new Date().toISOString() });
+    }
+    catch (e) {
+        next(e);
+    }
+});
 // Public/client-safe reads. Deleted or disabled items are never exposed.
 cmsRouter.get('/cms/:scope', async (req, res, next) => {
     try {
