@@ -90,6 +90,7 @@ userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
     voiceGender:z.enum(['female','male']).default('female'),
     localDateTime:z.string().max(120).optional(),
     timeZone:z.string().max(120).optional(),
+    locationName:z.string().max(255).optional(),
     latitude:z.number().min(-90).max(90).optional(),
     longitude:z.number().min(-180).max(180).optional()
   }).parse(req.body);
