@@ -1,37 +1,36 @@
-KHOBRAGADE AI — TOTAL FINAL AUDIT (current base: -Khobragade-AI-main(5).zip)
+KHOBRAGADE AI — FINAL TOTAL LOCK PATCH AUDIT
+Date: 2026-09-05
 
-AUDITED:
-- Android: pubspec, main/auth/login/home/chat/update service/config/API, checked-in Android manifest/Gradle, GitHub APK workflow.
-- Backend source: auth, AI provider, user routes, config/start scripts.
-- Website: layout/home/login/register/dashboard shell/chat/package config.
-- Admin: layout/login/sidebar/package config.
-- Branding/icon/favicon locations.
+BASE
+- Latest user-supplied ZIP used as the only code base.
+- No older project ZIP used as a code base.
 
-CONFIRMED WORKING/PRESERVED:
-- file_picker 10.3.10 (Android API 36 compatibility fix retained)
-- image_picker 1.1.2; Camera / Photos(Gallery) / Files flow retained
-- Google OAuth build-time Web Client ID flow retained
-- permanent signing workflow retained
-- auto update/share retained
-- voice + text chat code retained
-- image/file understanding retained
-- image/video routing retained
-- exact creator identity Nitesh Khobragade retained
-- female/male persona handling retained
+CONFIRMED FIXES INCLUDED
+1. Gemini text quota/rate fallback chain: OpenRouter, Groq, Cerebras, Mistral, DeepSeek, Together, xAI, Pollinations (configured keys only).
+2. Google Search grounding source extraction from Gemini groundingMetadata.
+3. Optional external search fallback: Tavily, Brave Search, Serper.
+4. Gemini current time uses Android-supplied UTC/timezone instead of server clock guessing.
+5. Realtime voice receives current local time, timezone and location context.
+6. Female assistant grammar normalization for Hindi/Hinglish/Marathi.
+7. Existing Gemini Live realtime voice architecture and interruption/VAD flow retained.
+8. GPS + reverse geocoding context retained and supplied to chat/voice.
+9. Android device manufacturer/model/brand/Android version/battery percentage context added.
+10. Image generation supports image input for image-to-image editing.
+11. Optional Hedra media adapter for image/video (requires Hedra API credits; not a guaranteed free tier).
+12. Optional Pollinations image/audio/video fallback.
+13. New Chat clears all pending attachment state and composer text.
+14. Attachment chip with explicit remove action added to composer.
+15. PDF document creation endpoint added using PDFKit, with mobile local file creation.
+16. Render deployment instructions added; stale backend dist removed so Render builds fresh TypeScript.
+17. Flutter speech_to_text deprecated listen arguments migrated to SpeechListenOptions.
+18. Flutter withOpacity warnings migrated to withValues(alpha:).
 
-AUDIT FIXES INCLUDED:
-1. Same exact selected No. 8 logo asset applied to Android UI, Android launcher icon, website branding/favicon, and admin branding/favicon.
-2. APK workflow now reapplies the launcher icon AFTER `flutter create`; without this, `flutter create` deletes any normal android/app icon files.
-3. APK workflow now restores Android 11+ speech recognition/TTS <queries>; the checked-in manifest had them but the generated CI manifest did not.
-4. Checked-in Android compileSdk changed 35 -> 36 for source/local compatibility with current plugin requirements.
-5. Website/Admin metadata updated from generic Creator Studio branding to Khobragade AI.
-6. Added actual favicon/icon assets; none existed in the uploaded current ZIP.
+LIMIT / HONESTY RULE
+- No third-party API is represented as unlimited.
+- A provider is used only when its credential is configured and the provider accepts the request.
+- If all configured providers are exhausted/unavailable, a final exhaustion error is returned.
 
-STATIC AUDIT RESULT:
-- No additional confirmed TS/TSX syntax error was found in project source.
-- No additional confirmed Android source error was found by static inspection.
-- Backend `dist/` is generated output and can differ from `src/`; normal deployment should run `npm run build` before `npm start`.
-- No unrelated layout, backend schema, auth routes, payment/wallet, CMS structure, or service behavior was changed.
-
-IMPORTANT:
-This ZIP contains RELATED/CHANGED FILES ONLY. Apply with the same folder paths over the current ZIP/repo.
+VALIDATION PERFORMED IN THIS ENVIRONMENT
+- Backend TypeScript syntax check: PASS (no TS1005/TS1109/TS1128/etc. syntax errors).
+- Full dependency compilation could not be executed here because the sandbox has no installed backend node_modules and Flutter SDK is unavailable; Render/CI must run npm install/flutter pub get before final production build.
+- Source and configuration reviewed for the confirmed failures from device testing.

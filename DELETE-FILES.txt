@@ -1,3 +1,2 @@
 No source files are required to be deleted by this patch.
 The ZIP's second MainActivity template file under com/khobragade/creatorstudio is not used by the configured application namespace and is intentionally preserved to avoid unrelated deletion.
-android-app/android/app/src/main/kotlin/com/khobragade/creatorstudio/MainActivity.kt

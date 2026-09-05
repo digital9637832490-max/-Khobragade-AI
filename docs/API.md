@@ -55,3 +55,8 @@ Admin-only:
 - POST /api/admin/cms/items/:id/restore
 - POST /api/admin/cms/:scope/reorder
 - POST /api/admin/cms/:scope/clone/:id
+
+## AI routing
+- `/api/ai/chat` supports device/location/time/file context.
+- Chat results may include `sources: [{title, uri}]` when grounded search is used.
+- AI provider fallback is configured through backend environment variables; see `backend/.env.example` and `docs/AI-FALLBACK-AND-FEATURES.md`.

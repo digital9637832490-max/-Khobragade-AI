@@ -60,6 +60,8 @@ All three support create/edit/update, enable/disable, reorder, clone, soft delet
 - Creator AI Chat: Gemini text model
 - AI Title / Description / Tags: Gemini text model
 - Voice-over: Gemini 3.1 Flash TTS Preview, playable WAV output
-- AI image/thumbnail generation: disabled while using Gemini Free Tier (provider requires paid image generation)
-- Photo-to-video/Veo: disabled while using Gemini Free Tier
-- Existing free-daily-limit -> coin-after-limit policy remains in place. Failed paid jobs automatically refund coins.
+- AI image/thumbnail generation: Gemini 3.1 Flash Image, with optional Hedra/Pollinations fallback adapters when configured
+- Photo-to-video/Veo: Veo 3.1, with optional Hedra/Pollinations fallback adapters when configured
+- Chat text automatically falls back across configured AI providers when the primary provider is rate-limited or quota-exhausted.
+- Search uses Gemini Google Search grounding first, with optional Tavily/Brave/Serper fallback.
+- There is no honest way to guarantee unlimited/free usage across third-party APIs; the app only uses providers whose credentials and quotas are available.
