@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'screens/home.dart';
 import 'screens/chat.dart';
 import 'screens/login.dart';
 import 'services/app_update_service.dart';
@@ -90,43 +91,7 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final pages = [HomeScreen(onLogout: widget.onLogout, onOpenChat: () => setState(() => index = 1)), const ChatScreen()];
-    return Scaffold(
-      body: IndexedStack(index: index, children: pages),
-      bottomNavigationBar: Container(
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          border: Border(top: BorderSide(color: Color(0xffe5e5e5))),
-        ),
-        child: SafeArea(
-          top: false,
-          child: NavigationBar(
-            selectedIndex: index,
-            onDestinationSelected: (v) => setState(() => index = v),
-            backgroundColor: Colors.white,
-            elevation: 0,
-            indicatorColor: const Color(0xffeeeeee),
-            destinations: [
-              const NavigationDestination(
-                icon: Icon(Icons.home_outlined),
-                selectedIcon: Icon(Icons.home_rounded),
-                label: 'Home',
-              ),
-              NavigationDestination(
-                icon: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.asset('assets/khobragade_ai_logo.png', width: 26, height: 26, fit: BoxFit.cover),
-                ),
-                selectedIcon: ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: Image.asset('assets/khobragade_ai_logo.png', width: 28, height: 28, fit: BoxFit.cover),
-                ),
-                label: 'Khobragade AI',
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+    // ChatGPT-style launch flow: authenticated users open directly into Chat.
+    return const ChatScreen();
   }
 }
