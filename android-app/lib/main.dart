@@ -91,6 +91,6 @@ class _AppShellState extends State<AppShell> {
   @override
   Widget build(BuildContext context) {
     // ChatGPT-style launch flow: authenticated users open directly into Chat.
-    return ChatScreen(onLogout: widget.onLogout);
+    return const ChatScreen();
   }
 }
