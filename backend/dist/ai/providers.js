@@ -392,14 +392,8 @@ class GeminiImage {
             try {
                 const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-                    body: JSON.stringify({
-                        contents: [{ parts: [{ text: prompt }] }],
-                        generationConfig: {
-                            responseModalities: ['IMAGE'],
-                            responseFormat: { image: { aspectRatio: String(input.aspectRatio || '1:1'), imageSize: String(input.imageSize || '1K') } }
-                        }
-                    })
-                }, 90000);
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } })
+                }, 60000);
                 const data = await response.json().catch(() => ({}));
                 if (response.ok) {
                     const image = (data?.candidates?.[0]?.content?.parts || []).find((x) => x?.inlineData?.data);
@@ -422,18 +416,7 @@ class GeminiImage {
             try {
                 const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai');
                 const model = env('POLLINATIONS_IMAGE_MODEL', 'flux');
-                const auth = { Authorization: `Bearer ${key}` };
-                const apiResponse = await fetchWithTimeout(`${base}/v1/images/generations`, {
-                    method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ model, prompt, size: String(input.size || '1024x1024'), n: 1, response_format: 'b64_json' })
-                }, 120000);
-                const apiData = await apiResponse.json().catch(() => ({}));
-                const b64 = apiData?.data?.[0]?.b64_json;
-                if (apiResponse.ok && b64) {
-                    markSuccess('pollinations-image', apiResponse.status);
-                    return { imageDataUrl: `data:image/png;base64,${b64}`, mimeType: 'image/png', provider: 'pollinations', model };
-                }
-                const response = await fetchWithTimeout(`${base}/image/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`, { headers: auth }, 120000);
+                const response = await fetchWithTimeout(`${base}/image/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`, { headers: { Authorization: `Bearer ${key}` } }, 90000);
                 if (response.ok) {
                     const mime = response.headers.get('content-type') || 'image/jpeg';
                     const buf = Buffer.from(await response.arrayBuffer());
@@ -442,7 +425,7 @@ class GeminiImage {
                         return { imageDataUrl: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'pollinations', model };
                     }
                 }
-                markFailure('pollinations-image', response.status || apiResponse.status, apiData?.error?.message || 'Pollinations returned no image');
+                markFailure('pollinations-image', response.status, 'Pollinations returned no image');
             }
             catch (e) {
                 markFailure('pollinations-image', undefined, e);
@@ -457,80 +440,92 @@ class VideoProviderImpl {
     async generate(input) {
         const prompt = String(input.prompt || input.text || input.title || '').trim() || `Create a ${String(input.style || 'cinematic')} video.`;
         const imageDataUrl = String(input.imageDataUrl || '').trim();
+        const aspectRatio = String(input.aspectRatio || '16:9') === '9:16' ? '9:16' : '16:9';
+        const resolution = ['720p', '1080p', '4k'].includes(String(input.resolution || '720p')) ? String(input.resolution || '720p') : '720p';
         const gemKey = geminiKey();
+        // Primary: Gemini Veo 3.1 long-running generation. The operation is polled until
+        // completion and the returned URI is kept for the authenticated download route.
         if (gemKey) {
             try {
                 const model = env('GEMINI_VIDEO_MODEL', 'veo-3.1-generate-preview');
                 const instance = { prompt };
                 if (imageDataUrl.startsWith('data:image/')) {
                     const comma = imageDataUrl.indexOf(',');
-                    if (comma > 0) {
-                        const mimeEnd = imageDataUrl.indexOf(';', 5);
-                        const mimeType = imageDataUrl.slice(5, mimeEnd > 0 ? mimeEnd : comma);
-                        const data = imageDataUrl.slice(comma + 1);
-                        if (mimeType && data)
-                            instance.image = { inlineData: { mimeType, data } };
-                    }
+                    const mimeEnd = imageDataUrl.indexOf(';', 5);
+                    const mimeType = imageDataUrl.slice(5, mimeEnd > 0 ? mimeEnd : comma);
+                    const data = imageDataUrl.slice(comma + 1);
+                    if (comma > 0 && mimeType && data)
+                        instance.image = { inlineData: { mimeType, data } };
                 }
-                const first = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': gemKey }, body: JSON.stringify({ instances: [instance], parameters: { numberOfVideos: 1, resolution: String(input.resolution || '720p'), aspectRatio: String(input.aspectRatio || '16:9') } }) }, 60000);
+                const first = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': gemKey }, body: JSON.stringify({
+                        instances: [instance],
+                        parameters: { numberOfVideos: 1, resolution, aspectRatio }
+                    }) }, 60000);
                 const created = await first.json().catch(() => ({}));
-                if (!first.ok) {
-                    const msg = String(created?.error?.message || '');
-                    if (first.status === 429)
-                        throw new Error('GEMINI_RATE_LIMIT');
-                    if (/billing|paid|quota|not available|permission/i.test(msg))
-                        throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED');
-                    throw new Error(msg || `Veo generation failed (${first.status})`);
-                }
-                const operation = created?.name;
+                if (!first.ok)
+                    throw new Error(String(created?.error?.message || `Veo generation failed (${first.status})`));
+                const operation = String(created?.name || '');
                 if (!operation)
                     throw new Error('Veo did not return an operation id');
-                for (let i = 0; i < 120; i++) {
-                    await new Promise(r => setTimeout(r, 10000));
+                const maxPolls = Math.max(30, Math.min(180, Number(input.maxPolls || 120)));
+                for (let i = 0; i < maxPolls; i++) {
+                    await new Promise(r => setTimeout(r, i === 0 ? 3000 : 10000));
                     const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/${operation}`, { headers: { 'x-goog-api-key': gemKey } }, 30000);
                     const d = await r.json().catch(() => ({}));
                     if (!r.ok)
-                        throw new Error(d?.error?.message || 'Veo status check failed');
-                    if (d.done) {
-                        if (d.error)
-                            throw new Error(d.error.message || 'Veo generation failed');
-                        const uri = d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-                        if (!uri)
-                            throw new Error('Veo completed but returned no video');
-                        markSuccess('gemini-video', 200);
-                        return { videoUri: uri, provider: 'gemini', model };
-                    }
+                        throw new Error(String(d?.error?.message || 'Veo status check failed'));
+                    if (!d.done)
+                        continue;
+                    if (d.error)
+                        throw new Error(String(d.error.message || 'Veo generation failed'));
+                    const uri = String(d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri || '');
+                    if (!uri)
+                        throw new Error('Veo completed but returned no video');
+                    markSuccess('gemini-video', 200);
+                    return { videoUri: uri, provider: 'gemini', model };
                 }
-                throw new Error('Video generation timed out. Please try again.');
+                throw new Error('VIDEO_GENERATION_TIMEOUT');
             }
             catch (e) {
                 markFailure('gemini-video', undefined, e);
-                if (e?.message === 'GEMINI_RATE_LIMIT') { /* continue to Pollinations */ }
             }
         }
         else
             state('gemini-video', false);
+        // Fallback: Pollinations authenticated video endpoint. Accept both direct binary
+        // video responses and JSON/text responses containing a generated video URL.
         const key = env('POLLINATIONS_API_KEY');
         if (key) {
             try {
-                const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai');
+                const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai').replace(/\/$/, '');
                 const model = env('POLLINATIONS_VIDEO_MODEL', 'veo');
-                const url = `${base}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&duration=${encodeURIComponent(String(input.duration || 5))}`;
-                const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${key}` } }, 180000);
+                const duration = Math.max(1, Math.min(15, Number(input.duration || 5)));
+                const url = `${base}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&duration=${encodeURIComponent(String(duration))}`;
+                const response = await fetchWithTimeout(url, {
+                    headers: { Authorization: `Bearer ${key}`, Accept: 'video/mp4,video/*,application/json,text/plain,*/*' }
+                }, 300000);
+                const contentType = response.headers.get('content-type') || '';
                 if (response.ok) {
-                    const contentType = response.headers.get('content-type') || '';
-                    if (contentType.includes('video')) {
+                    if (contentType.includes('video') || contentType === 'application/octet-stream') {
                         const buf = Buffer.from(await response.arrayBuffer());
                         if (buf.length > 10000) {
                             markSuccess('pollinations-video', response.status);
-                            return { videoDataUrl: `data:${contentType};base64,${buf.toString('base64')}`, mimeType: contentType, provider: 'pollinations', model };
+                            return { videoDataUrl: `data:${contentType.includes('video') ? contentType : 'video/mp4'};base64,${buf.toString('base64')}`, mimeType: contentType.includes('video') ? contentType : 'video/mp4', provider: 'pollinations', model };
                         }
                     }
-                    const text = await response.text();
-                    if (/^https?:\/\//i.test(text.trim()))
-                        return { videoUri: text.trim(), provider: 'pollinations', model };
+                    const raw = await response.text();
+                    let videoUrl = raw.trim();
+                    try {
+                        const parsed = JSON.parse(raw);
+                        videoUrl = String(parsed?.url || parsed?.videoUrl || parsed?.video?.url || '').trim();
+                    }
+                    catch (_) { }
+                    if (/^https?:\/\//i.test(videoUrl)) {
+                        markSuccess('pollinations-video', response.status);
+                        return { videoUri: videoUrl, provider: 'pollinations', model };
+                    }
                 }
-                markFailure('pollinations-video', response.status, 'Pollinations returned no video');
+                markFailure('pollinations-video', response.status, `Pollinations video generation failed (${response.status})`);
             }
             catch (e) {
                 markFailure('pollinations-video', undefined, e);
@@ -541,15 +536,4 @@ class VideoProviderImpl {
         throw new Error('ALL_VIDEO_PROVIDERS_EXHAUSTED');
     }
 }
-export function providerStatus() {
-    const configured = {
-        gemini: !!geminiKey(), openrouter: !!env('OPENROUTER_API_KEY'), groq: !!env('GROQ_API_KEY'), cerebras: !!env('CEREBRAS_API_KEY'),
-        mistral: !!env('MISTRAL_API_KEY'), deepseek: !!env('DEEPSEEK_API_KEY'), together: !!env('TOGETHER_API_KEY'), xai: !!env('XAI_API_KEY'), pollinations: !!env('POLLINATIONS_API_KEY')
-    };
-    return Object.entries(configured).map(([name, isConfigured]) => ({ name, configured: isConfigured, ...(providerState.get(name) || { failures: 0 }) }));
-}
-export async function searchWeb(query) { return fetchWebContext(query); }
-export const textProvider = new GeminiText();
-export const audioProvider = new GeminiAudio();
-export const imageProvider = new GeminiImage();
 export const videoProvider = new VideoProviderImpl();
