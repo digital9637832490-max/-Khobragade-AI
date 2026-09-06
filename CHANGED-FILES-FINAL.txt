@@ -1,0 +1,21 @@
+KHOBRAGADE AI — FINAL POINTS 1-10 RELATED CHANGED FILES
+
+CHANGED
+backend/src/ai/providers.ts
+backend/dist/ai/providers.js
+backend/src/routes/user.ts
+backend/dist/routes/user.js
+android-app/lib/screens/chat.dart
+website/app/chat/page.tsx
+website/lib/api.ts
+DELETE-FILES.txt
+
+DELETED
+android-app/android/app/src/main/kotlin/com/khobragade/creatorstudio/MainActivity.kt
+android-app/fix_plugin_compile_sdk.gradle
+
+Notes:
+- Only files related to Points 1-10 and the confirmed Render/legacy cleanup were changed.
+- The duplicate providerStatus 'configured' property causing TS2783 was removed at source level.
+- The deleted Android entrypoint was an unused duplicate outside the configured namespace.
+- The deleted Gradle file was an unused compileSdk workaround with no project references.

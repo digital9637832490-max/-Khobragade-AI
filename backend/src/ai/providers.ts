@@ -176,9 +176,9 @@ function providerConfigs() {
     { name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env('GROQ_API_KEY'), model: env('GROQ_CHAT_MODEL', 'openai/gpt-oss-20b') },
     { name: 'cerebras', url: 'https://api.cerebras.ai/v1/chat/completions', key: env('CEREBRAS_API_KEY'), model: env('CEREBRAS_CHAT_MODEL', 'llama-3.3-70b') },
     { name: 'mistral', url: 'https://api.mistral.ai/v1/chat/completions', key: env('MISTRAL_API_KEY'), model: env('MISTRAL_CHAT_MODEL', 'mistral-large-latest') },
-    { name: 'deepseek', url: 'https://api.deepseek.com/chat/completions', key: env('DEEPSEEK_API_KEY'), model: env('DEEPSEEK_CHAT_MODEL', 'deepseek-v4-pro') },
+    { name: 'deepseek', url: 'https://api.deepseek.com/chat/completions', key: env('DEEPSEEK_API_KEY'), model: env('DEEPSEEK_CHAT_MODEL', 'deepseek-chat') },
     { name: 'together', url: 'https://api.together.ai/v1/chat/completions', key: env('TOGETHER_API_KEY'), model: env('TOGETHER_CHAT_MODEL', 'openai/gpt-oss-20b') },
-    { name: 'xai', url: 'https://api.x.ai/v1/chat/completions', key: env('XAI_API_KEY'), model: env('XAI_CHAT_MODEL', 'grok-4.6') },
+    { name: 'xai', url: 'https://api.x.ai/v1/chat/completions', key: env('XAI_API_KEY'), model: env('XAI_CHAT_MODEL', 'grok-4.1-fast') },
     { name: 'pollinations', url: `${env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai')}/v1/chat/completions`, key: env('POLLINATIONS_API_KEY'), model: env('POLLINATIONS_TEXT_MODEL', 'openai') },
   ];
 }
@@ -226,7 +226,7 @@ class GeminiText implements TextProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const apiKey = geminiKey();
     const isChat = input.mode === 'chat';
-    const chatModels = [env('GEMINI_CHAT_MODEL', 'gemini-3.7-flash'), 'gemini-3.6-flash', 'gemini-3.5-flash'].filter((v, i, a) => v && a.indexOf(v) === i);
+    const chatModels = [env('GEMINI_CHAT_MODEL', 'gemini-3.8-flash'), 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-3.5-flash'].filter((v, i, a) => v && a.indexOf(v) === i);
     const localDateTime = String(input.localDateTime || '').trim();
     const timeZone = String(input.timeZone || '').trim();
     const latitude = Number(input.latitude); const longitude = Number(input.longitude);
@@ -240,7 +240,19 @@ class GeminiText implements TextProvider {
     if (isChat && /(who (created|made|developed) you|your creator|kisne (banaya|banayi)|किसने (बनाया|बनाई)|creator.*(kaun|who)|निर्माता कौन)/i.test(userMessage)) return { answer: 'Mujhe Nitesh Khobragade ne banaya hai.' };
 
     const searchRequested = shouldSearch(userMessage);
+    const asksOwnLocation = /(my location|where am i|meri location|mera location|मेरी लोकेशन|मेरा लोकेशन|मैं कहाँ हूँ|main kahan hoon)/i.test(userMessage);
+    const asksCurrentTime = /(current time|time now|what time|abhi kitne baje|kitne baje|वर्तमान समय|अभी कितने बजे|समय क्या)/i.test(userMessage);
+    const asksNews = /(news|latest news|today news|breaking news|खबर|न्यूज़|समाचार|ताज़ा खबर|आज की खबर|ब्रेकिंग)/i.test(userMessage);
+    if (isChat && asksCurrentTime) {
+      const timeLabel = language === 'en' ? `The current local time is ${localDateTime || 'not available'}.` : language === 'mr' ? `सध्याची स्थानिक वेळ ${localDateTime || 'उपलब्ध नाही'} आहे.` : `अभी का स्थानीय समय ${localDateTime || 'उपलब्ध नहीं है'} है.`; return { answer: timeLabel, webSearched: false, provider: 'context-time' };
+    }
+    if (isChat && asksOwnLocation) {
+      if (!locationName && !(Number.isFinite(latitude) && Number.isFinite(longitude))) throw new Error('LOCATION_UNAVAILABLE');
+      const place = locationName || `${latitude}, ${longitude}`; const locationLabel = language === 'en' ? `Your current location is ${place}.` : language === 'mr' ? `तुमची सध्याची लोकेशन ${place} आहे.` : `आपकी वर्तमान लोकेशन ${place} है.`; return { answer: locationLabel, webSearched: false, provider: 'context-location' };
+    }
     const external = searchRequested ? await fetchWebContext(userMessage) : { text: '', sources: [] as WebSource[] };
+    if (isChat && searchRequested && external.sources.length === 0) throw new Error('WEB_SEARCH_UNAVAILABLE');
+    const newsInstruction = asksNews ? `For news requests, produce a professional current-news briefing from the supplied live search results. Do not invent headlines or facts. Clearly separate headline, key detail, and source.` : '';
     const prompt = isChat ? `You are ✨ Khobragade AI, a professional, friendly general-purpose AI assistant created by Nitesh Khobragade.
 Creator name is exactly: Nitesh Khobragade. Never alter it.
 Selected language: ${languageName}. Answer in that language unless explicitly asked otherwise.
@@ -253,6 +265,7 @@ When asked current time/date, use the supplied local context exactly. When asked
 For current/news/search questions, use only the supplied web-search context and clearly distinguish search results from general knowledge. Never claim a search happened if no sources were returned.
 Never claim an image/video was generated unless the application tool actually generated it.
 Keep the answer complete and natural. Do not unnecessarily shorten the answer.
+${newsInstruction}
 External web-search context:
 ${external.text || 'none'}
 Recent conversation:
@@ -367,89 +380,58 @@ class VideoProviderImpl implements VideoProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const prompt = String(input.prompt || input.text || input.title || '').trim() || `Create a ${String(input.style || 'cinematic')} video.`;
     const imageDataUrl = String(input.imageDataUrl || '').trim();
-    const aspectRatio = String(input.aspectRatio || '16:9') === '9:16' ? '9:16' : '16:9';
-    const resolution = ['720p', '1080p', '4k'].includes(String(input.resolution || '720p')) ? String(input.resolution || '720p') : '720p';
     const gemKey = geminiKey();
-
-    // Primary: Gemini Veo 3.1 long-running generation. The operation is polled until
-    // completion and the returned URI is kept for the authenticated download route.
     if (gemKey) {
       try {
         const model = env('GEMINI_VIDEO_MODEL', 'veo-3.1-generate-preview');
         const instance: any = { prompt };
-        if (imageDataUrl.startsWith('data:image/')) {
-          const comma = imageDataUrl.indexOf(',');
-          const mimeEnd = imageDataUrl.indexOf(';', 5);
-          const mimeType = imageDataUrl.slice(5, mimeEnd > 0 ? mimeEnd : comma);
-          const data = imageDataUrl.slice(comma + 1);
-          if (comma > 0 && mimeType && data) instance.image = { inlineData: { mimeType, data } };
-        }
-        const first = await fetchWithTimeout(
-          `https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning`,
-          { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': gemKey }, body: JSON.stringify({
-            instances: [instance],
-            parameters: { numberOfVideos: 1, resolution, aspectRatio }
-          }) },
-          60000
-        );
+        if (imageDataUrl.startsWith('data:image/')) { const comma = imageDataUrl.indexOf(','); if (comma > 0) { const mimeEnd = imageDataUrl.indexOf(';', 5); const mimeType = imageDataUrl.slice(5, mimeEnd > 0 ? mimeEnd : comma); const data = imageDataUrl.slice(comma + 1); if (mimeType && data) instance.image = { inlineData: { mimeType, data } }; } }
+        const first = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': gemKey }, body: JSON.stringify({ instances: [instance], parameters: { numberOfVideos: 1, resolution: String(input.resolution || '720p'), aspectRatio: String(input.aspectRatio || '16:9') } }) }, 60000);
         const created: any = await first.json().catch(() => ({}));
-        if (!first.ok) throw new Error(String(created?.error?.message || `Veo generation failed (${first.status})`));
-        const operation = String(created?.name || '');
-        if (!operation) throw new Error('Veo did not return an operation id');
-
-        const maxPolls = Math.max(30, Math.min(180, Number(input.maxPolls || 120)));
-        for (let i = 0; i < maxPolls; i++) {
-          await new Promise(r => setTimeout(r, i === 0 ? 3000 : 10000));
+        if (!first.ok) { const msg = String(created?.error?.message || ''); if (first.status === 429) throw new Error('GEMINI_RATE_LIMIT'); if (/billing|paid|quota|not available|permission/i.test(msg)) throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED'); throw new Error(msg || `Veo generation failed (${first.status})`); }
+        const operation = created?.name; if (!operation) throw new Error('Veo did not return an operation id');
+        for (let i = 0; i < 120; i++) {
+          await new Promise(r => setTimeout(r, 10000));
           const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/${operation}`, { headers: { 'x-goog-api-key': gemKey } }, 30000);
-          const d: any = await r.json().catch(() => ({}));
-          if (!r.ok) throw new Error(String(d?.error?.message || 'Veo status check failed'));
-          if (!d.done) continue;
-          if (d.error) throw new Error(String(d.error.message || 'Veo generation failed'));
-          const uri = String(d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri || '');
-          if (!uri) throw new Error('Veo completed but returned no video');
-          markSuccess('gemini-video', 200);
-          return { videoUri: uri, provider: 'gemini', model };
+          const d: any = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d?.error?.message || 'Veo status check failed');
+          if (d.done) { if (d.error) throw new Error(d.error.message || 'Veo generation failed'); const uri = d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri; if (!uri) throw new Error('Veo completed but returned no video'); markSuccess('gemini-video', 200); return { videoUri: uri, provider: 'gemini', model }; }
         }
-        throw new Error('VIDEO_GENERATION_TIMEOUT');
+        throw new Error('Video generation timed out. Please try again.');
       } catch (e: any) {
         markFailure('gemini-video', undefined, e);
+        if (e?.message === 'GEMINI_RATE_LIMIT') { /* continue to Pollinations */ }
       }
     } else state('gemini-video', false);
 
-    // Fallback: Pollinations authenticated video endpoint. Accept both direct binary
-    // video responses and JSON/text responses containing a generated video URL.
     const key = env('POLLINATIONS_API_KEY');
     if (key) {
       try {
-        const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai').replace(/\/$/, '');
+        const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai');
         const model = env('POLLINATIONS_VIDEO_MODEL', 'veo');
-        const duration = Math.max(1, Math.min(15, Number(input.duration || 5)));
-        const url = `${base}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&duration=${encodeURIComponent(String(duration))}`;
-        const response = await fetchWithTimeout(url, {
-          headers: { Authorization: `Bearer ${key}`, Accept: 'video/mp4,video/*,application/json,text/plain,*/*' }
-        }, 300000);
-        const contentType = response.headers.get('content-type') || '';
-        if (response.ok) {
-          if (contentType.includes('video') || contentType === 'application/octet-stream') {
-            const buf = Buffer.from(await response.arrayBuffer());
-            if (buf.length > 10000) {
-              markSuccess('pollinations-video', response.status);
-              return { videoDataUrl: `data:${contentType.includes('video') ? contentType : 'video/mp4'};base64,${buf.toString('base64')}`, mimeType: contentType.includes('video') ? contentType : 'video/mp4', provider: 'pollinations', model };
-            }
-          }
-          const raw = await response.text();
-          let videoUrl = raw.trim();
-          try { const parsed = JSON.parse(raw); videoUrl = String(parsed?.url || parsed?.videoUrl || parsed?.video?.url || '').trim(); } catch (_) {}
-          if (/^https?:\/\//i.test(videoUrl)) {
-            markSuccess('pollinations-video', response.status);
-            return { videoUri: videoUrl, provider: 'pollinations', model };
-          }
-        }
-        markFailure('pollinations-video', response.status, `Pollinations video generation failed (${response.status})`);
+        const url = `${base}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&duration=${encodeURIComponent(String(input.duration || 5))}`;
+        const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${key}` } }, 180000);
+        if (response.ok) { const contentType = response.headers.get('content-type') || ''; if (contentType.includes('video')) { const buf = Buffer.from(await response.arrayBuffer()); if (buf.length > 10000) { markSuccess('pollinations-video', response.status); return { videoDataUrl: `data:${contentType};base64,${buf.toString('base64')}`, mimeType: contentType, provider: 'pollinations', model }; } } const text = await response.text(); if (/^https?:\/\//i.test(text.trim())) return { videoUri: text.trim(), provider: 'pollinations', model }; }
+        markFailure('pollinations-video', response.status, 'Pollinations returned no video');
       } catch (e) { markFailure('pollinations-video', undefined, e); }
     } else state('pollinations-video', false);
     throw new Error('ALL_VIDEO_PROVIDERS_EXHAUSTED');
   }
 }
 
+export function providerStatus() {
+  const configured: Record<string, boolean> = {
+    gemini: !!geminiKey(), openrouter: !!env('OPENROUTER_API_KEY'), groq: !!env('GROQ_API_KEY'), cerebras: !!env('CEREBRAS_API_KEY'),
+    mistral: !!env('MISTRAL_API_KEY'), deepseek: !!env('DEEPSEEK_API_KEY'), together: !!env('TOGETHER_API_KEY'), xai: !!env('XAI_API_KEY'), pollinations: !!env('POLLINATIONS_API_KEY')
+  };
+  return Object.entries(configured).map(([name, isConfigured]) => {
+    const previous = providerState.get(name);
+    return { name, configured: isConfigured, failures: previous?.failures ?? 0, lastStatus: previous?.lastStatus, lastError: previous?.lastError, lastSuccessAt: previous?.lastSuccessAt };
+  });
+}
+
+export async function searchWeb(query: string) { return fetchWebContext(query); }
+
+export const textProvider: TextProvider = new GeminiText();
+export const audioProvider: AudioProvider = new GeminiAudio();
+export const imageProvider: ImageProvider = new GeminiImage();
 export const videoProvider: VideoProvider = new VideoProviderImpl();
