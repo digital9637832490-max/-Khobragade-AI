@@ -1,8 +1,9 @@
-import { pool, tx } from './db.js';
-import { textProvider, imageProvider, videoProvider, audioProvider } from './ai/providers.js';
-import { changeCoins } from './wallet.js';
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+const db_js_1 = require("./db.js");
+const providers_js_1 = require("./ai/providers.js");
 async function processOne() {
-    const client = await pool.connect();
+    const client = await db_js_1.pool.connect();
     let job;
     try {
         await client.query('BEGIN');
@@ -23,21 +24,14 @@ async function processOne() {
         client.release();
     }
     try {
-        const result = (job.tool_key === 'thumbnail' || job.tool_key === 'photo') ? await imageProvider.generate(job.input)
-            : job.tool_key === 'voiceover' ? await audioProvider.generate(job.input)
-                : job.tool_key === 'video' ? await videoProvider.generate(job.input)
-                    : await textProvider.generate(job.input);
-        await pool.query(`UPDATE ai_jobs SET status='completed',result=$2,completed_at=now() WHERE id=$1`, [job.id, result]);
+        const result = (job.tool_key === 'thumbnail' || job.tool_key === 'photo') ? await providers_js_1.imageProvider.generate(job.input)
+            : job.tool_key === 'voiceover' ? await providers_js_1.audioProvider.generate(job.input)
+                : job.tool_key === 'video' ? await providers_js_1.videoProvider.generate(job.input)
+                    : await providers_js_1.textProvider.generate(job.input);
+        await db_js_1.pool.query(`UPDATE ai_jobs SET status='completed',result=$2,completed_at=now() WHERE id=$1`, [job.id, result]);
     }
     catch (e) {
-        await tx(async (c) => {
-            await c.query(`UPDATE ai_jobs SET status='failed',error_message=$2,completed_at=now() WHERE id=$1`, [job.id, String(e?.message || e)]);
-            if (Number(job.coin_cost) > 0) {
-                const already = await c.query(`SELECT 1 FROM wallet_transactions WHERE user_id=$1 AND reference_id=$2 AND source='ai:refund' LIMIT 1`, [job.user_id, job.id]);
-                if (!already.rowCount)
-                    await changeCoins(c, job.user_id, Number(job.coin_cost), 'ai:refund', 'AI generation failed - automatic refund', job.id);
-            }
-        });
+        await db_js_1.pool.query(`UPDATE ai_jobs SET status='failed',error_message=$2,completed_at=now() WHERE id=$1`, [job.id, String(e?.message || e)]);
     }
     return true;
 }

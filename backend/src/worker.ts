@@ -1,4 +1,4 @@
-import { pool, tx } from './db.js';
+import { pool } from './db.js';
 import { textProvider, imageProvider, videoProvider, audioProvider } from './ai/providers.js';
 
 async function processOne(){
@@ -20,9 +20,7 @@ async function processOne(){
       : await textProvider.generate(job.input);
     await pool.query(`UPDATE ai_jobs SET status='completed',result=$2,completed_at=now() WHERE id=$1`,[job.id,result]);
   }catch(e:any){
-    await tx(async c=>{
-      await c.query(`UPDATE ai_jobs SET status='failed',error_message=$2,completed_at=now() WHERE id=$1`,[job.id,String(e?.message||e)]);
-    });
+    await pool.query(`UPDATE ai_jobs SET status='failed',error_message=$2,completed_at=now() WHERE id=$1`,[job.id,String(e?.message||e)]);
   }
   return true;
 }

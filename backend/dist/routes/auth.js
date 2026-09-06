@@ -1,38 +1,44 @@
-import { Router } from 'express';
-import bcrypt from 'bcryptjs';
-import { z } from 'zod';
-import { pool } from '../db.js';
-import { signToken, requireAuth } from '../auth.js';
-export const authRouter = Router();
-authRouter.post('/register', async (req, res, next) => {
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.authRouter = void 0;
+const express_1 = require("express");
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const zod_1 = require("zod");
+const db_js_1 = require("../db.js");
+const auth_js_1 = require("../auth.js");
+exports.authRouter = (0, express_1.Router)();
+exports.authRouter.post('/register', async (req, res, next) => {
     try {
-        const body = z.object({ name: z.string().min(2), email: z.string().email(), password: z.string().min(8) }).parse(req.body);
-        const hash = await bcrypt.hash(body.password, 12);
-        const q = await pool.query('INSERT INTO users(name,email,password_hash) VALUES($1,lower($2),$3) RETURNING id,name,email,coin_balance', [body.name, body.email, hash]);
-        res.status(201).json({ user: q.rows[0], token: signToken(q.rows[0].id, 'user') });
+        const body = zod_1.z.object({ name: zod_1.z.string().min(2), email: zod_1.z.string().email(), password: zod_1.z.string().min(8) }).parse(req.body);
+        const hash = await bcryptjs_1.default.hash(body.password, 12);
+        const q = await db_js_1.pool.query('INSERT INTO users(name,email,password_hash) VALUES($1,lower($2),$3) RETURNING id,name,email', [body.name, body.email, hash]);
+        res.status(201).json({ user: q.rows[0], token: (0, auth_js_1.signToken)(q.rows[0].id, 'user') });
     }
     catch (e) {
         next(e);
     }
 });
-authRouter.post('/login', async (req, res, next) => {
+exports.authRouter.post('/login', async (req, res, next) => {
     try {
-        const body = z.object({ email: z.string().email(), password: z.string().min(1) }).parse(req.body);
-        const q = await pool.query('SELECT * FROM users WHERE email=lower($1)', [body.email]);
+        const body = zod_1.z.object({ email: zod_1.z.string().email(), password: zod_1.z.string().min(1) }).parse(req.body);
+        const q = await db_js_1.pool.query('SELECT * FROM users WHERE email=lower($1)', [body.email]);
         const u = q.rows[0];
-        if (!u || !(await bcrypt.compare(body.password, u.password_hash)))
+        if (!u || !(await bcryptjs_1.default.compare(body.password, u.password_hash)))
             return res.status(401).json({ error: 'Invalid credentials' });
         if (u.status !== 'active')
             return res.status(403).json({ error: 'Account blocked' });
-        res.json({ token: signToken(u.id, 'user'), user: { id: u.id, name: u.name, email: u.email, coinBalance: u.coin_balance } });
+        res.json({ token: (0, auth_js_1.signToken)(u.id, 'user'), user: { id: u.id, name: u.name, email: u.email } });
     }
     catch (e) {
         next(e);
     }
 });
-authRouter.post('/google', async (req, res, next) => {
+exports.authRouter.post('/google', async (req, res, next) => {
     try {
-        const body = z.object({ idToken: z.string().min(20) }).parse(req.body);
+        const body = zod_1.z.object({ idToken: zod_1.z.string().min(20) }).parse(req.body);
         const googleClientId = process.env.GOOGLE_CLIENT_ID?.trim();
         if (!googleClientId)
             return res.status(503).json({ error: 'Google login is not configured' });
@@ -44,33 +50,33 @@ authRouter.post('/google', async (req, res, next) => {
             return res.status(401).json({ error: 'Google account verification failed' });
         const email = String(profile.email).toLowerCase();
         const name = String(profile.name || email.split('@')[0]).slice(0, 120);
-        let q = await pool.query('SELECT * FROM users WHERE email=lower($1)', [email]);
+        let q = await db_js_1.pool.query('SELECT * FROM users WHERE email=lower($1)', [email]);
         let u = q.rows[0];
         if (!u) {
             // Keep schema compatibility: OAuth users receive a random unusable password hash.
             const randomSecret = `google-oauth:${profile.sub}:${crypto.randomUUID()}`;
-            const hash = await bcrypt.hash(randomSecret, 12);
-            q = await pool.query('INSERT INTO users(name,email,password_hash) VALUES($1,lower($2),$3) RETURNING *', [name, email, hash]);
+            const hash = await bcryptjs_1.default.hash(randomSecret, 12);
+            q = await db_js_1.pool.query('INSERT INTO users(name,email,password_hash) VALUES($1,lower($2),$3) RETURNING *', [name, email, hash]);
             u = q.rows[0];
         }
         if (u.status !== 'active')
             return res.status(403).json({ error: 'Account blocked' });
-        res.json({ token: signToken(u.id, 'user'), user: { id: u.id, name: u.name, email: u.email, coinBalance: u.coin_balance } });
+        res.json({ token: (0, auth_js_1.signToken)(u.id, 'user'), user: { id: u.id, name: u.name, email: u.email } });
     }
     catch (e) {
         next(e);
     }
 });
-authRouter.post('/forgot-password', async (req, res) => {
+exports.authRouter.post('/forgot-password', async (req, res) => {
     res.json({ ok: true, message: 'Password reset provider hook ready. Configure email provider before production.' });
 });
-authRouter.get('/me', requireAuth, async (req, res, next) => {
+exports.authRouter.get('/me', auth_js_1.requireAuth, async (req, res, next) => {
     try {
         if (req.auth.role === 'admin') {
-            const q = await pool.query('SELECT id,email,role FROM admins WHERE id=$1', [req.auth.id]);
+            const q = await db_js_1.pool.query('SELECT id,email,role FROM admins WHERE id=$1', [req.auth.id]);
             return res.json(q.rows[0]);
         }
-        const q = await pool.query('SELECT id,name,email,coin_balance,status,created_at FROM users WHERE id=$1', [req.auth.id]);
+        const q = await db_js_1.pool.query('SELECT id,name,email,status,created_at FROM users WHERE id=$1', [req.auth.id]);
         res.json(q.rows[0]);
     }
     catch (e) {

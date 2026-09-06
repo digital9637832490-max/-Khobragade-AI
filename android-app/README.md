@@ -1,6 +1,6 @@
 # Khobragade AI Android App
 
-The Android app uses the same backend as the website and supports user login/register, dashboard, Khobragade AI chat, microphone input, continuous voice mode, male/female voice selection, maintenance handling and the existing wallet/AI flow.
+The Android app uses the same backend as the website and supports user login/register, dashboard, Khobragade AI chat, microphone input, continuous voice mode, male/female voice selection, maintenance handling.
 
 ## Production API
 Default API base:

@@ -1,2 +1,6 @@
-No source files are required to be deleted by this patch.
-The unused duplicate MainActivity template under com/khobragade/creatorstudio was removed in the final cleanup.
+Files intentionally deleted for total Coin-system removal:
+backend/src/wallet.ts
+backend/dist/wallet.js
+website/app/coins/page.tsx
+website/app/transactions/page.tsx
+admin-panel/app/coin-management/page.tsx
