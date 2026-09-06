@@ -8,7 +8,6 @@ Clients:
 Core API:
 - Auth
 - Users
-- Wallet
 - Payments
 - Projects
 - AI jobs
@@ -19,9 +18,6 @@ Core API:
 
 Data:
 - PostgreSQL is source of truth.
-- Coin balance is cached on `users` for fast reads but every mutation creates immutable ledger history.
-- Payment approval and coin credit are one database transaction.
-- AI job creation and coin debit are one database transaction.
 
 Async:
 - API creates `ai_jobs`.
@@ -33,3 +29,9 @@ Async:
 Storage:
 - Keep original and generated media private.
 - API should return short-lived signed URLs after ownership checks.
+
+
+## Current media fallback
+- Gemini 3.1 Flash Image is the primary image provider.
+- Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
+- Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.

@@ -1,6 +1,5 @@
 import { pool, tx } from './db.js';
 import { textProvider, imageProvider, videoProvider, audioProvider } from './ai/providers.js';
-import { changeCoins } from './wallet.js';
 
 async function processOne(){
   const client=await pool.connect();
@@ -23,10 +22,6 @@ async function processOne(){
   }catch(e:any){
     await tx(async c=>{
       await c.query(`UPDATE ai_jobs SET status='failed',error_message=$2,completed_at=now() WHERE id=$1`,[job.id,String(e?.message||e)]);
-      if(Number(job.coin_cost)>0){
-        const already=await c.query(`SELECT 1 FROM wallet_transactions WHERE user_id=$1 AND reference_id=$2 AND source='ai:refund' LIMIT 1`,[job.user_id,job.id]);
-        if(!already.rowCount) await changeCoins(c,job.user_id,Number(job.coin_cost),'ai:refund','AI generation failed - automatic refund',job.id);
-      }
     });
   }
   return true;

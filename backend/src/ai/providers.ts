@@ -305,35 +305,34 @@ class GeminiAudio implements AudioProvider {
 class GeminiImage implements ImageProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const prompt=String(input.prompt||input.topic||input.title||input.text||'').trim();
-    if(!prompt)throw new Error('Image prompt is required');
+    if(!prompt) throw new Error('Image prompt is required');
     const apiKey=process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
     const model=process.env.GEMINI_IMAGE_MODEL||'gemini-3.1-flash-image';
+    const aspectRatio=String(input.aspectRatio||'1:1');
+    const imageSize=String(input.imageSize||'1K');
     try{
       if(!apiKey) throw new Error('GEMINI_API_KEY missing');
-      const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{responseModalities:['TEXT','IMAGE']}})});
+      const response=await fetch('https://generativelanguage.googleapis.com/v1beta/interactions',{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify({model,input:prompt,response_format:{type:'image',aspect_ratio:aspectRatio,image_size:imageSize}})});
       const data:any=await response.json();
-      if(!response.ok)throw new Error(String(data?.error?.message||`Gemini image generation failed (${response.status})`));
-      const image=(data?.candidates?.[0]?.content?.parts||[]).find((x:any)=>x?.inlineData?.data);
-      if(!image?.inlineData?.data)throw new Error('Gemini returned no image');
-      const mime=image.inlineData.mimeType||'image/png';
-      return {imageDataUrl:`data:${mime};base64,${image.inlineData.data}`,mimeType:mime,provider:'gemini',model};
+      if(!response.ok) throw new Error(String(data?.error?.message||`Gemini image generation failed (${response.status})`));
+      const stepParts=(data?.steps||[]).flatMap((step:any)=>Array.isArray(step?.content)?step.content:[]);
+      const image=stepParts.find((x:any)=>x?.type==='image'&&x?.data) || data?.output_image;
+      const imageData=String(image?.data||'');
+      if(!imageData) throw new Error('Gemini returned no image');
+      const mime=String(image?.mime_type||image?.mimeType||'image/png');
+      return {imageDataUrl:`data:${mime};base64,${imageData}`,mimeType:mime,provider:'gemini',model};
     }catch(primary){
-      const hedra=process.env.HEDRA_API_KEY;
-      if(hedra){
+      const key=process.env.POLLINATIONS_API_KEY||'';
+      if(key){
         try{
-          const r=await fetch(`https://api.hedra.com/v3/models/${process.env.HEDRA_IMAGE_MODEL||'nano-banana-2'}`,{method:'POST',headers:{'Content-Type':'application/json','Authorization':`Key ${hedra}`},body:JSON.stringify({input:{prompt,num_outputs:1,aspect_ratio:String(input.aspectRatio||'16:9'),resolution:String(input.resolution||'1K')}})});
-          const d:any=await r.json();
-          if(r.ok){const uri=String(d?.image_url||d?.result?.image_url||d?.output?.url||d?.result?.url||'');if(uri)return {imageUrl:uri,provider:'hedra',model:process.env.HEDRA_IMAGE_MODEL||'nano-banana-2'};}
-        }catch(e){console.warn('Hedra image fallback failed',e);}
+          const model=process.env.POLLINATIONS_IMAGE_MODEL||'flux';
+          const url=`https://gen.pollinations.ai/image/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`;
+          const r=await fetch(url,{headers:{Authorization:`Bearer ${key}`}});
+          if(r.ok){const mime=r.headers.get('content-type')||'image/jpeg';const buf=Buffer.from(await r.arrayBuffer());if(buf.length>1000)return {imageDataUrl:`data:${mime};base64,${buf.toString('base64')}`,mimeType:mime,provider:'pollinations',model};}
+        }catch(e){console.warn('Pollinations image fallback failed',e);}
       }
-      try{
-        const key=process.env.POLLINATIONS_API_KEY||'';
-        const model=process.env.POLLINATIONS_IMAGE_MODEL||'flux';
-        const base=key?'https://gen.pollinations.ai/image/':'https://image.pollinations.ai/prompt/';
-        const url=`${base}${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`;
-        const r=await fetch(url,{headers:key?{Authorization:`Bearer ${key}`}:{} });
-        if(r.ok){const mime=r.headers.get('content-type')||'image/jpeg';const buf=Buffer.from(await r.arrayBuffer());if(buf.length>1000)return {imageDataUrl:`data:${mime};base64,${buf.toString('base64')}`,mimeType:mime,provider:'pollinations',model};}
-      }catch(e){console.warn('Pollinations image fallback failed',e);}
+      const msg=String((primary as any)?.message||primary||'');
+      if(/billing|paid|quota|not available|permission/i.test(msg)) throw new Error('IMAGE_PROVIDER_BILLING_REQUIRED');
       throw new Error('ALL_IMAGE_PROVIDERS_EXHAUSTED');
     }
   }
@@ -341,49 +340,35 @@ class GeminiImage implements ImageProvider {
 
 class GeminiVideo implements VideoProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
-    const apiKey=geminiKey();
-    const prompt=String(input.prompt||input.text||input.title||input.voice||'').trim() ||
-      `Create a ${String(input.style||'cinematic')} video. ${String(input.transition||'')} ${String(input.photos||'')}`;
+    const prompt=String(input.prompt||input.text||input.title||input.voice||'').trim() || `Create a ${String(input.style||'cinematic')} video.`;
+    const imageDataUrl=String(input.imageDataUrl||'').trim();
+    const apiKey=process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
     const model=process.env.GEMINI_VIDEO_MODEL||'veo-3.1-generate-preview';
-    const base='https://generativelanguage.googleapis.com/v1beta';
-    const imageDataUrl = String(input.imageDataUrl || '').trim();
-    let imagePart: any = undefined;
-    if (imageDataUrl.startsWith('data:image/')) {
-      const comma = imageDataUrl.indexOf(',');
-      if (comma > 0) {
-        const mimeType = imageDataUrl.slice(5, imageDataUrl.indexOf(';', 5) > 0 ? imageDataUrl.indexOf(';', 5) : comma);
-        const data = imageDataUrl.slice(comma + 1);
-        if (mimeType && data) imagePart = { inlineData: { mimeType, data } };
+    try{
+      if(!apiKey) throw new Error('GEMINI_API_KEY missing');
+      let imagePart:any=undefined;
+      if(imageDataUrl.startsWith('data:image/')){const comma=imageDataUrl.indexOf(',');if(comma>0){const semi=imageDataUrl.indexOf(';',5);const mimeType=imageDataUrl.slice(5,semi>0?semi:comma);const data=imageDataUrl.slice(comma+1);if(mimeType&&data)imagePart={inlineData:{mimeType,data}};}}
+      const instance:any={prompt};if(imagePart)instance.image=imagePart;
+      const first=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify({instances:[instance],parameters:{numberOfVideos:1,resolution:'720p',aspectRatio:'16:9'}})});
+      const created:any=await first.json();
+      if(!first.ok) throw new Error(String(created?.error?.message||`Veo generation failed (${first.status})`));
+      const operation=created?.name;if(!operation)throw new Error('Veo did not return an operation id');
+      for(let i=0;i<90;i++){await new Promise(r=>setTimeout(r,10000));const r=await fetch(`https://generativelanguage.googleapis.com/v1beta/${operation}`,{headers:{'x-goog-api-key':apiKey}});const d:any=await r.json();if(!r.ok)throw new Error(d?.error?.message||'Veo status check failed');if(d.done){if(d.error)throw new Error(d.error.message||'Veo generation failed');const uri=d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;if(!uri)throw new Error('Veo completed but returned no video');return {videoUri:uri,provider:'gemini',model};}}
+      throw new Error('Video generation timed out. Please try again.');
+    }catch(primary){
+      const key=process.env.POLLINATIONS_API_KEY||'';
+      if(key){
+        try{
+          const pmodel=process.env.POLLINATIONS_VIDEO_MODEL||'veo';
+          const params=new URLSearchParams({model:pmodel,duration:String(input.duration||5),aspectRatio:'16:9',key});
+          const r=await fetch(`https://gen.pollinations.ai/video/${encodeURIComponent(prompt)}?${params.toString()}`,{headers:{Authorization:`Bearer ${key}`}});
+          if(r.ok){const contentType=r.headers.get('content-type')||'video/mp4';const buf=Buffer.from(await r.arrayBuffer());if(buf.length>1000)return {videoDataUrl:`data:${contentType};base64,${buf.toString('base64')}`,mimeType:contentType,provider:'pollinations',model:pmodel};}
+        }catch(e){console.warn('Pollinations video fallback failed',e);}
       }
+      const msg=String((primary as any)?.message||primary||'');
+      if(/billing|paid|quota|permission|not available/i.test(msg)) throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED');
+      throw primary;
     }
-    const instance: any = { prompt };
-    if (imagePart) instance.image = imagePart;
-    const first=await fetch(`${base}/models/${model}:predictLongRunning`,{
-      method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},
-      body:JSON.stringify({instances:[instance],parameters:{numberOfVideos:1,resolution:'720p',aspectRatio:'16:9'}})
-    });
-    const created:any=await first.json();
-    if(!first.ok){
-      const msg=String(created?.error?.message||'');
-      if(first.status===429) throw new Error('GEMINI_RATE_LIMIT');
-      if(/billing|paid|quota|not available/i.test(msg)) throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED');
-      throw new Error(msg||`Veo generation failed (${first.status})`);
-    }
-    const operation=created?.name;
-    if(!operation) throw new Error('Veo did not return an operation id');
-    for(let i=0;i<90;i++){
-      await new Promise(r=>setTimeout(r,10000));
-      const r=await fetch(`${base}/${operation}`,{headers:{'x-goog-api-key':apiKey}});
-      const d:any=await r.json();
-      if(!r.ok) throw new Error(d?.error?.message||'Veo status check failed');
-      if(d.done){
-        if(d.error) throw new Error(d.error.message||'Veo generation failed');
-        const uri=d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-        if(!uri) throw new Error('Veo completed but returned no video');
-        return {videoUri:uri,provider:'gemini',model};
-      }
-    }
-    throw new Error('Video generation timed out. Please try again.');
   }
 }
 

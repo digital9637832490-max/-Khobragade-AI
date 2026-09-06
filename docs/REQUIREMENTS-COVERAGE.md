@@ -4,17 +4,11 @@
 Home, Features, How It Works, Pricing, Login, Register, Forgot Password, Contact, Terms, Privacy: `website/app/*`.
 
 ## User Dashboard
-Dashboard home, AI Thumbnail, AI Title, AI Description, AI Tags/Hashtags, Photo→Video, Voice-over, Projects/Jobs, Coins/Recharge, Transactions, Notifications, Support, Profile, Logout are present in `website/app` and use the shared backend.
 
 ## Android App
-Flutter app uses the same REST backend and JWT account. Bottom navigation: Home, Create, Projects, Coins, Profile. Create includes Thumbnail, Title, Description, Tags, Photo→Video and Voice-over.
 
-## Wallet and Recharge
-Server-side wallet mutation: `backend/src/wallet.ts`.
-Payment request/approval/rejection: user/admin routes. Payment approval and coin credit are atomic. Ledger history is stored in PostgreSQL.
 
 ## Admin
-Dashboard reports, users, coin adjustment/block, payment approval/rejection, coin package management, AI tool settings/cost/limit/maintenance, project/job management, notifications, support replies/status, audit logs.
 
 ## AI / Video
 Provider interfaces: `backend/src/ai/providers.ts`.
@@ -35,3 +29,9 @@ Real AI text/image/video providers, S3-compatible object storage, payment gatewa
 
 ## Deployment
 Setup, API, security, architecture and deployment documentation are in `docs/`.
+
+
+## Current media fallback
+- Gemini 3.1 Flash Image is the primary image provider.
+- Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
+- Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.

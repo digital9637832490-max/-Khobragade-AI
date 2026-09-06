@@ -16,11 +16,15 @@ Scale path:
 2. Add connection pooling and managed database metrics.
 3. Move jobs to Redis/BullMQ or managed queue when concurrency grows.
 4. Add multiple workers for video/AI workloads.
-5. Keep wallet/payment operations in PostgreSQL transactions.
-6. Never let workers directly alter coin balances except through a reviewed server-side service.
 
 Android:
 - set production API URL with `--dart-define`
 - configure release signing
 - build `flutter build appbundle`
 - upload AAB to Play Console
+
+
+## Current media fallback
+- Gemini 3.1 Flash Image is the primary image provider.
+- Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
+- Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.

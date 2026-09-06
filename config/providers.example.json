@@ -1,4 +1,7 @@
 {
+  "POLLINATIONS_API_KEY": "",
+  "POLLINATIONS_IMAGE_MODEL": "flux",
+  "POLLINATIONS_VIDEO_MODEL": "veo",
   "aiText": {"provider":"mock","envKey":"AI_TEXT_API_KEY"},
   "aiImage": {"provider":"mock","envKey":"AI_IMAGE_API_KEY"},
   "aiVideo": {"provider":"mock","envKey":"AI_VIDEO_API_KEY"},

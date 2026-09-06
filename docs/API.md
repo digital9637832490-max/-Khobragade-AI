@@ -7,9 +7,6 @@ Auth:
 - GET /api/auth/me
 
 User:
-- GET /api/wallet
-- GET /api/wallet/transactions
-- GET /api/coin-packages
 - POST /api/payments/request
 - POST /api/projects
 - GET /api/projects
@@ -23,7 +20,6 @@ User:
 Admin:
 - POST /api/admin/login
 - GET /api/admin/users
-- POST /api/admin/users/:id/coins
 - POST /api/admin/users/:id/status
 - GET /api/admin/payments
 - POST /api/admin/payments/:id/approve
@@ -35,7 +31,6 @@ Admin:
 Authorization:
 `Authorization: Bearer <JWT>`
 
-Coin safety:
 AI job creation performs a database transaction. User row is locked, insufficient balance is rejected,
 ledger is written, and the updated server-side balance is committed atomically.
 
@@ -60,3 +55,9 @@ Admin-only:
 - `/api/ai/chat` supports device/location/time/file context.
 - Chat results may include `sources: [{title, uri}]` when grounded search is used.
 - AI provider fallback is configured through backend environment variables; see `backend/.env.example` and `docs/AI-FALLBACK-AND-FEATURES.md`.
+
+
+## Current media fallback
+- Gemini 3.1 Flash Image is the primary image provider.
+- Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
+- Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.

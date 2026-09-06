@@ -46,3 +46,9 @@ Media fallback:
 - Gemini 3.1 Flash Image is the current recommended image generation/editing family.
 - Veo 3.1 is the current recommended Veo generation family.
 - Hedra API is supported as a separately configurable media provider in the architecture; Hedra API requires a paid subscription/API credits, so it is not represented as a guaranteed free fallback.
+
+
+## Current media fallback
+- Gemini 3.1 Flash Image is the primary image provider.
+- Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
+- Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.

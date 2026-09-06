@@ -1,8 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { pool, tx } from '../db.js';
+import { pool } from '../db.js';
 import { requireAuth } from '../auth.js';
-import { changeCoins } from '../wallet.js';
 import { textProvider } from '../ai/providers.js';
 export const userRouter=Router();
 userRouter.use(requireAuth);
@@ -27,28 +26,6 @@ userRouter.get('/location/reverse', async(req,res,next)=>{
   }catch(e){next(e)}
 });
 
-userRouter.get('/wallet', async(req,res,next)=>{
-  try{const q=await pool.query('SELECT coin_balance FROM users WHERE id=$1',[req.auth!.id]);res.json({coinBalance:Number(q.rows[0]?.coin_balance||0)});}catch(e){next(e)}
-});
-userRouter.get('/wallet/transactions', async(req,res,next)=>{
-  try{const q=await pool.query('SELECT * FROM wallet_transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200',[req.auth!.id]);res.json(q.rows);}catch(e){next(e)}
-});
-userRouter.get('/coin-packages', async(_req,res,next)=>{
-  try{const q=await pool.query('SELECT * FROM coin_packages WHERE is_active=true ORDER BY sort_order, price_inr');res.json(q.rows);}catch(e){next(e)}
-});
-userRouter.post('/payments/request', async(req,res,next)=>{
-  try{
-    const b=z.object({packageId:z.string().uuid(),transactionId:z.string().min(3),proofFileKey:z.string().optional()}).parse(req.body);
-    const p=await pool.query('SELECT * FROM coin_packages WHERE id=$1 AND is_active=true',[b.packageId]);
-    if(!p.rowCount) return res.status(400).json({error:'Invalid package'});
-    const q=await pool.query(
-      `INSERT INTO payment_requests(user_id,package_id,amount_inr,transaction_id,proof_file_key)
-       VALUES($1,$2,$3,$4,$5) RETURNING *`,
-      [req.auth!.id,b.packageId,p.rows[0].price_inr,b.transactionId,b.proofFileKey||null]
-    );
-    res.status(201).json(q.rows[0]);
-  }catch(e){next(e)}
-});
 userRouter.post('/projects', async(req,res,next)=>{
   try{
     const b=z.object({name:z.string().min(1),type:z.string().min(1),input:z.record(z.any()).default({})}).parse(req.body);
@@ -61,27 +38,15 @@ userRouter.get('/projects', async(req,res,next)=>{
 });
 
 async function createAiJob(userId:string, toolKey:string, input:any){
-  return tx(async c=>{
-    const s=await c.query('SELECT value FROM settings WHERE key=$1',[`tool.${toolKey}`]);
-    const cfg=s.rows[0]?.value || {enabled:true,coinCost:0,maintenance:false};
-    if(!cfg.enabled || cfg.maintenance) throw new Error('Tool unavailable');
-    // Khobragade AI chat is always free for users: no app daily message limit and no coin charge.
-    // Other AI tools keep their existing free-quota / coin / safety-limit rules.
-    let cost=0;
-    if(toolKey!=='chat'){
-      const used=await c.query(`SELECT count(*) FROM ai_jobs WHERE user_id=$1 AND tool_key=$2 AND created_at >= date_trunc('day', now())`,[userId,toolKey]);
-      const usedToday=Number(used.rows[0].count||0);
-      const freeDailyLimit=Math.max(0,Number(cfg.freeDailyLimit||0));
-      const paidCoinCost=Math.max(0,Number(cfg.coinCost||0));
-      // Free quota is consumed first. After that, generations continue using coins.
-      // dailyLimit is an optional safety ceiling; 0/missing means no hard daily ceiling.
-      if(Number(cfg.dailyLimit||0)>0 && usedToday>=Number(cfg.dailyLimit)) throw new Error('Daily safety limit reached');
-      cost=usedToday < freeDailyLimit ? 0 : paidCoinCost;
-    }
-    const j=await c.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,$3,$4) RETURNING *`,[userId,toolKey,cost,input]);
-    if(cost>0) await changeCoins(c,userId,-cost,`ai:${toolKey}`,'AI generation',j.rows[0].id);
-    return j.rows[0];
-  });
+  const s=await pool.query('SELECT value FROM settings WHERE key=$1',[`tool.${toolKey}`]);
+  const cfg=s.rows[0]?.value || {enabled:true,dailyLimit:0,maintenance:false};
+  if(!cfg.enabled || cfg.maintenance) throw new Error('Tool unavailable');
+  if(toolKey!=='chat' && Number(cfg.dailyLimit||0)>0){
+    const used=await pool.query(`SELECT count(*) FROM ai_jobs WHERE user_id=$1 AND tool_key=$2 AND created_at >= date_trunc('day', now())`,[userId,toolKey]);
+    if(Number(used.rows[0].count||0)>=Number(cfg.dailyLimit)) throw new Error('Daily safety limit reached');
+  }
+  const j=await pool.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,0,$3) RETURNING *`,[userId,toolKey,input]);
+  return j.rows[0];
 }
 userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
   const b=z.object({
@@ -112,7 +77,10 @@ userRouter.get('/ai/video/:id/file', async(req,res,next)=>{
   try{
     const q=await pool.query('SELECT result FROM ai_jobs WHERE id=$1 AND user_id=$2 AND tool_key=$3 AND status=$4',[req.params.id,req.auth!.id,'video','completed']);
     if(!q.rowCount) return res.status(404).json({error:'Generated video not found'});
-    const uri=String(q.rows[0]?.result?.videoUri||q.rows[0]?.result?.videoUrl||'');
+    const result=q.rows[0]?.result||{};
+    const dataUrl=String(result.videoDataUrl||'');
+    if(dataUrl.startsWith('data:video/')){const comma=dataUrl.indexOf(',');if(comma>0){const mime=dataUrl.slice(5,dataUrl.indexOf(';',5)>0?dataUrl.indexOf(';',5):comma);const buf=Buffer.from(dataUrl.slice(comma+1),'base64');res.setHeader('Content-Type',mime||'video/mp4');res.setHeader('Content-Length',String(buf.length));res.setHeader('Cache-Control','private, max-age=300');return res.end(buf);}}
+    const uri=String(result.videoUri||result.videoUrl||'');
     if(!uri) return res.status(404).json({error:'Video file is not available'});
     const apiKey=process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
     if(!apiKey) return res.status(500).json({error:'Gemini API key missing'});
