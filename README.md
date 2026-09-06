@@ -7,7 +7,6 @@ Production-oriented starter package for a YouTube creator platform with:
 - Node.js + Express + TypeScript backend
 - PostgreSQL schema and seed data
 - Flutter Android app scaffold
-- Coin wallet ledger with server-side credit/debit
 - Manual payment verification flow with idempotent approval
 - AI tool adapter interfaces for text/image/video providers
 - Async AI/video job queue structure
@@ -21,7 +20,6 @@ Production-oriented starter package for a YouTube creator platform with:
 This package is intentionally provider-configurable. Real AI generation, payment gateway settlement, S3 upload signing,
 push notifications and email delivery require your own provider accounts/API keys.
 
-The core wallet and payment approval flow is implemented on the backend and never trusts a client-submitted balance.
 
 ## Quick start
 
@@ -65,3 +63,9 @@ All three support create/edit/update, enable/disable, reorder, clone, soft delet
 - Chat text automatically falls back across configured AI providers when the primary provider is rate-limited or quota-exhausted.
 - Search uses Gemini Google Search grounding first, with optional Tavily/Brave/Serper fallback.
 - There is no honest way to guarantee unlimited/free usage across third-party APIs; the app only uses providers whose credentials and quotas are available.
+
+
+## Current media fallback
+- Gemini 3.1 Flash Image is the primary image provider.
+- Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
+- Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.

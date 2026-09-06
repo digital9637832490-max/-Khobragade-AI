@@ -36,7 +36,7 @@ export default function Page(){
   return <Shell>
     <h1>Gemini Voice-over</h1>
     <div className="card" style={{maxWidth:820}}>
-      <p><b>Free Gemini TTS</b> · 3 free generations/day, then your configured coin charge.</p>
+      <p><b>Gemini TTS</b> · Free access subject to provider availability and Admin safety limits.</p>
       <textarea style={{minHeight:180}} placeholder="Hindi, Marathi or English voice-over text…" value={text} onChange={e=>setText(e.target.value)}/>
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12,margin:'12px 0'}}>
         <label>Voice<select value={voice} onChange={e=>setVoice(e.target.value)}>{voices.map(v=><option key={v}>{v}</option>)}</select></label>

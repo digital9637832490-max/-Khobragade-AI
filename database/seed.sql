@@ -1,21 +1,13 @@
-INSERT INTO coin_packages(name, coins, bonus_coins, price_inr, sort_order)
-VALUES
-('Starter',100,0,99,1),
-('Creator',500,0,399,2),
-('Pro',1000,0,699,3),
-('Business',5000,0,2999,4)
-ON CONFLICT DO NOTHING;
-
 INSERT INTO settings(key, value)
 VALUES
-('tool.thumbnail','{"enabled":true,"freeDailyLimit":3,"coinCost":5,"dailyLimit":100,"maintenance":false}'::jsonb),
-('tool.photo','{"enabled":true,"freeDailyLimit":3,"coinCost":5,"dailyLimit":100,"maintenance":false}'::jsonb),
-('tool.title','{"enabled":true,"freeDailyLimit":10,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
-('tool.chat','{"enabled":true,"freeDailyLimit":20,"coinCost":1,"dailyLimit":300,"maintenance":false}'::jsonb),
-('tool.description','{"enabled":true,"freeDailyLimit":10,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
-('tool.tags','{"enabled":true,"freeDailyLimit":10,"coinCost":2,"dailyLimit":200,"maintenance":false}'::jsonb),
-('tool.video','{"enabled":true,"freeDailyLimit":1,"coinCost":10,"dailyLimit":50,"maintenance":false}'::jsonb),
-('tool.voiceover','{"enabled":true,"freeDailyLimit":3,"coinCost":5,"dailyLimit":100,"maintenance":false}'::jsonb)
+('tool.thumbnail','{"enabled":true,"freeDailyLimit":3,"dailyLimit":100,"maintenance":false}'::jsonb),
+('tool.photo','{"enabled":true,"freeDailyLimit":3,"dailyLimit":100,"maintenance":false}'::jsonb),
+('tool.title','{"enabled":true,"freeDailyLimit":10,"dailyLimit":200,"maintenance":false}'::jsonb),
+('tool.chat','{"enabled":true,"freeDailyLimit":20,"dailyLimit":300,"maintenance":false}'::jsonb),
+('tool.description','{"enabled":true,"freeDailyLimit":10,"dailyLimit":200,"maintenance":false}'::jsonb),
+('tool.tags','{"enabled":true,"freeDailyLimit":10,"dailyLimit":200,"maintenance":false}'::jsonb),
+('tool.video','{"enabled":true,"freeDailyLimit":1,"dailyLimit":50,"maintenance":false}'::jsonb),
+('tool.voiceover','{"enabled":true,"freeDailyLimit":3,"dailyLimit":100,"maintenance":false}'::jsonb)
 ON CONFLICT(key) DO UPDATE SET value=EXCLUDED.value;
 
 INSERT INTO cms_items(scope,item_key,item_type,title,content,design,behavior,validation,sort_order)
@@ -24,10 +16,10 @@ VALUES
  '{"heading":"Create better YouTube content with one Creator Studio.","subheading":"Generate thumbnails, titles, descriptions, tags and photo-to-video projects with a secure coin wallet.","primaryCta":{"label":"Get Started","href":"/register"},"secondaryCta":{"label":"View Pricing","href":"/pricing"}}',
  '{"visible":true,"layout":"hero"}','{"actions":[]}','{}',10),
 ('website','home.features','section','Home Features',
- '{"items":["AI Thumbnail Maker","AI Title Generator","AI Description Generator","AI Tags + Hashtags","Photo → Video","Coin Wallet"]}',
+ '{"items":["AI Thumbnail Maker","AI Title Generator","AI Description Generator","AI Tags + Hashtags","Photo → Video","Voice & Chat"]}',
  '{"visible":true,"columns":"auto"}','{"actions":[]}','{}',20),
 ('website','navigation.main','navigation','Website Navigation',
- '{"items":[{"label":"Features","href":"/features"},{"label":"How It Works","href":"/how-it-works"},{"label":"Pricing","href":"/pricing"},{"label":"Contact","href":"/contact"},{"label":"Login","href":"/login"}]}',
+ '{"items":[{"label":"Features","href":"/features"},{"label":"How It Works","href":"/how-it-works"},{"label":"Plans & Features","href":"/pricing"},{"label":"Contact","href":"/contact"},{"label":"Login","href":"/login"}]}',
  '{"visible":true}','{"openExternal":false}','{}',1),
 ('app','navigation.bottom','navigation','App Bottom Navigation',
  '{"items":[{"key":"home","label":"Home","icon":"home"},{"key":"create","label":"Create","icon":"auto_awesome"},{"key":"projects","label":"Projects","icon":"folder"},{"key":"coins","label":"Coins","icon":"monetization_on"},{"key":"profile","label":"Profile","icon":"person"}]}',
@@ -46,11 +38,11 @@ ON CONFLICT(scope,item_key) DO NOTHING;
 INSERT INTO cms_items(scope,item_key,item_type,title,content,design,behavior,validation,sort_order)
 VALUES
 ('website','page.features','page','Features Page','{"heading":"Features","body":"AI Thumbnail, AI Titles, Descriptions, Tags, Photo → Video, Voice-over and project management."}','{"visible":true}','{}','{}',100),
-('website','page.how-it-works','page','How It Works Page','{"heading":"How It Works","body":"Register, recharge coins, select a creator tool, confirm cost, generate, preview and save your project."}','{"visible":true}','{}','{}',110),
-('website','page.pricing','page','Pricing Page','{"heading":"Pricing","body":"Starter ₹99 / 100 coins · Creator ₹399 / 500 · Pro ₹699 / 1,000 · Business ₹2,999 / 5,000."}','{"visible":true}','{}','{}',120),
+('website','page.how-it-works','page','How It Works Page','{"heading":"How It Works","body":"Register, sign in, choose a language, select a creator tool, generate, preview and save your project."}','{"visible":true}','{}','{}',110),
+('website','page.pricing','page','Plans & Features Page','{"heading":"Plans & Features","body":"Starter ₹99 / 100 coins · Creator ₹399 / 500 · Pro ₹699 / 1,000 · Business ₹2,999 / 5,000."}','{"visible":true}','{}','{}',120),
 ('website','page.contact','page','Contact Page','{"heading":"Contact","body":"Contact Creator Studio support using the support/contact channel configured by Admin."}','{"visible":true}','{}','{}',130),
 ('website','page.terms','page','Terms Page','{"heading":"Terms & Conditions","body":"Configure reviewed Terms & Conditions from Website CMS before public launch."}','{"visible":true}','{}','{}',140),
 ('website','page.privacy','page','Privacy Page','{"heading":"Privacy Policy","body":"Configure reviewed Privacy Policy from Website CMS before public launch."}','{"visible":true}','{}','{}',150),
-('website','dashboard.navigation','navigation','User Dashboard Navigation','{"items":["dashboard","chat","ai-thumbnail","ai-title","ai-description","ai-tags","photo-video","voice-over","coins","support","profile"]}','{"visible":true}','{}','{}',2),
-('app','home.cards','collection','App Home Cards','{"items":[{"title":"Welcome Creator","subtitle":"Coin Balance loads from /wallet"},{"title":"Quick Create","subtitle":"Thumbnail · Title · Video"},{"title":"Recent Projects","subtitle":"Loads from /projects"},{"title":"Notifications","subtitle":"Loads from /notifications"}]}','{"visible":true}','{}','{}',20)
+('website','dashboard.navigation','navigation','User Dashboard Navigation','{"items":["dashboard","chat","ai-thumbnail","ai-title","ai-description","ai-tags","photo-video","voice-over","support","profile"]}','{"visible":true}','{}','{}',2),
+('app','home.cards','collection','App Home Cards','{"items":[{"title":"Welcome Creator","subtitle":"Open Khobragade AI and start creating"},{"title":"Quick Create","subtitle":"Thumbnail · Title · Video"},{"title":"Recent Projects","subtitle":"Loads from /projects"},{"title":"Notifications","subtitle":"Loads from /notifications"}]}','{"visible":true}','{}','{}',20)
 ON CONFLICT(scope,item_key) DO NOTHING;

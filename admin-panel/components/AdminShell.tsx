@@ -1,9 +1,9 @@
 'use client';
 import {useEffect,useMemo,useState} from 'react';
 import {api} from '../lib/api';
-const allowed=['dashboard','users','payments','coin-management','ai-tools','projects','reports','notifications','support','audit-logs','maintenance','admin-cms','website-cms','app-cms'];
-const labels:Record<string,string>={dashboard:'Dashboard',users:'Users',payments:'Payments','coin-management':'Coin Management','ai-tools':'AI Tools',projects:'Projects',reports:'Reports',notifications:'Notifications',support:'Support','audit-logs':'Audit Logs',maintenance:'Maintenance','admin-cms':'Admin CMS','website-cms':'Website CMS','app-cms':'App CMS'};
-const icons:Record<string,string>={dashboard:'⌂',users:'♟',payments:'₹','coin-management':'◉','ai-tools':'✦',projects:'▣',reports:'▥',notifications:'●',support:'?', 'audit-logs':'≡',maintenance:'⚙','admin-cms':'A','website-cms':'W','app-cms':'▯'};
+const allowed=['dashboard','users','ai-tools','projects','reports','notifications','support','audit-logs','maintenance','admin-cms','website-cms','app-cms'];
+const labels:Record<string,string>={dashboard:'Dashboard',users:'Users','ai-tools':'AI Tools',projects:'Projects',reports:'Reports',notifications:'Notifications',support:'Support','audit-logs':'Audit Logs',maintenance:'Maintenance','admin-cms':'Admin CMS','website-cms':'Website CMS','app-cms':'App CMS'};
+const icons:Record<string,string>={dashboard:'⌂',users:'♟','ai-tools':'✦',projects:'▣',reports:'▥',notifications:'●',support:'?', 'audit-logs':'≡',maintenance:'⚙','admin-cms':'A','website-cms':'W','app-cms':'▯'};
 export default function Shell({children}:{children:React.ReactNode}){
  const [cmsLinks,setCmsLinks]=useState<string[]>(allowed);
  useEffect(()=>{api('/admin/cms/admin').then((rows:any[])=>{const nav=rows.find(x=>x.item_key==='navigation.sidebar');if(Array.isArray(nav?.content?.items))setCmsLinks(nav.content.items)}).catch(()=>{})},[]);

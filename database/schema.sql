@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  coin_balance BIGINT NOT NULL DEFAULT 0 CHECK (coin_balance >= 0),
+  coin_balance BIGINT NOT NULL DEFAULT 0 CHECK (coin_balance >= 0), -- LEGACY: no longer used by application flow
   status user_status NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -84,7 +84,7 @@ CREATE TABLE IF NOT EXISTS ai_jobs (
   project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
   tool_key TEXT NOT NULL,
   status job_status NOT NULL DEFAULT 'pending',
-  coin_cost BIGINT NOT NULL CHECK (coin_cost >= 0),
+  coin_cost BIGINT NOT NULL DEFAULT 0 CHECK (coin_cost >= 0), -- LEGACY: always written as 0
   input JSONB NOT NULL DEFAULT '{}'::jsonb,
   result JSONB NOT NULL DEFAULT '{}'::jsonb,
   error_message TEXT,
