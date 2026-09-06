@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { pool, tx } from '../db.js';
 import { requireAuth } from '../auth.js';
+import { changeCoins } from '../wallet.js';
 import { textProvider } from '../ai/providers.js';
 export const userRouter=Router();
 userRouter.use(requireAuth);
@@ -26,11 +27,27 @@ userRouter.get('/location/reverse', async(req,res,next)=>{
   }catch(e){next(e)}
 });
 
-userRouter.get('/app/update', async(_req,res)=>{
-  const build=Number(process.env.APP_LATEST_BUILD||0);
-  const version=String(process.env.APP_LATEST_VERSION||'');
-  const apkUrl=String(process.env.APP_APK_URL||'https://github.com/digital9637832490-max/-Khobragade-AI/releases/latest');
-  res.json({latestBuild:build,latestVersion:version,apkUrl});
+userRouter.get('/wallet', async(req,res,next)=>{
+  try{const q=await pool.query('SELECT coin_balance FROM users WHERE id=$1',[req.auth!.id]);res.json({coinBalance:Number(q.rows[0]?.coin_balance||0)});}catch(e){next(e)}
+});
+userRouter.get('/wallet/transactions', async(req,res,next)=>{
+  try{const q=await pool.query('SELECT * FROM wallet_transactions WHERE user_id=$1 ORDER BY created_at DESC LIMIT 200',[req.auth!.id]);res.json(q.rows);}catch(e){next(e)}
+});
+userRouter.get('/coin-packages', async(_req,res,next)=>{
+  try{const q=await pool.query('SELECT * FROM coin_packages WHERE is_active=true ORDER BY sort_order, price_inr');res.json(q.rows);}catch(e){next(e)}
+});
+userRouter.post('/payments/request', async(req,res,next)=>{
+  try{
+    const b=z.object({packageId:z.string().uuid(),transactionId:z.string().min(3),proofFileKey:z.string().optional()}).parse(req.body);
+    const p=await pool.query('SELECT * FROM coin_packages WHERE id=$1 AND is_active=true',[b.packageId]);
+    if(!p.rowCount) return res.status(400).json({error:'Invalid package'});
+    const q=await pool.query(
+      `INSERT INTO payment_requests(user_id,package_id,amount_inr,transaction_id,proof_file_key)
+       VALUES($1,$2,$3,$4,$5) RETURNING *`,
+      [req.auth!.id,b.packageId,p.rows[0].price_inr,b.transactionId,b.proofFileKey||null]
+    );
+    res.status(201).json(q.rows[0]);
+  }catch(e){next(e)}
 });
 userRouter.post('/projects', async(req,res,next)=>{
   try{
@@ -46,10 +63,12 @@ userRouter.get('/projects', async(req,res,next)=>{
 async function createAiJob(userId:string, toolKey:string, input:any){
   return tx(async c=>{
     const s=await c.query('SELECT value FROM settings WHERE key=$1',[`tool.${toolKey}`]);
-    const cfg=s.rows[0]?.value || {enabled:true,maintenance:false};
+    const cfg=s.rows[0]?.value || {enabled:true,coinCost:0,maintenance:false};
     if(!cfg.enabled || cfg.maintenance) throw new Error('Tool unavailable');
-    // All AI tools are free in the current Khobragade AI app.
-    const j=await c.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,0,$3) RETURNING *`,[userId,toolKey,input]);
+    // AI tools are not blocked by the removed coin system. Keep only the CMS enabled/maintenance check.
+    const cost=0;
+    const j=await c.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,$3,$4) RETURNING *`,[userId,toolKey,cost,input]);
+    if(cost>0) await changeCoins(c,userId,-cost,`ai:${toolKey}`,'AI generation',j.rows[0].id);
     return j.rows[0];
   });
 }
@@ -82,13 +101,11 @@ userRouter.get('/ai/video/:id/file', async(req,res,next)=>{
   try{
     const q=await pool.query('SELECT result FROM ai_jobs WHERE id=$1 AND user_id=$2 AND tool_key=$3 AND status=$4',[req.params.id,req.auth!.id,'video','completed']);
     if(!q.rowCount) return res.status(404).json({error:'Generated video not found'});
-    const result:any=q.rows[0]?.result||{};
-    const uri=String(result.videoUri||result.videoUrl||'');
+    const uri=String(q.rows[0]?.result?.videoUri||q.rows[0]?.result?.videoUrl||'');
     if(!uri) return res.status(404).json({error:'Video file is not available'});
-    const isPollinations=String(result.provider||'')==='pollinations';
-    const apiKey=isPollinations?(process.env.POLLINATIONS_API_KEY||''):(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '');
-    if(!apiKey) return res.status(500).json({error:isPollinations?'Pollinations API key missing':'Gemini API key missing'});
-    const r=await fetch(uri,{headers:{Authorization:isPollinations?`Bearer ${apiKey}`:undefined,'x-goog-api-key':isPollinations?undefined:apiKey} as any});
+    const apiKey=process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
+    if(!apiKey) return res.status(500).json({error:'Gemini API key missing'});
+    const r=await fetch(uri,{headers:{'x-goog-api-key':apiKey}});
     if(!r.ok) return res.status(r.status).json({error:'Generated video could not be downloaded'});
     res.setHeader('Content-Type',r.headers.get('content-type')||'video/mp4');
     res.setHeader('Cache-Control','private, max-age=300');
