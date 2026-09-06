@@ -17,7 +17,7 @@ export interface AudioProvider {
 }
 
 function geminiKey() {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
   if (!apiKey) throw new Error('GEMINI_API_KEY missing in Render Environment');
   return apiKey;
 }
@@ -111,10 +111,6 @@ async function openAiCompatibleFallback(input:Record<string,unknown>, system:str
     {name:'openrouter',url:'https://openrouter.ai/api/v1/chat/completions',key:process.env.OPENROUTER_API_KEY||'',model:process.env.OPENROUTER_CHAT_MODEL||'openai/gpt-oss-20b:free'},
     {name:'groq',url:'https://api.groq.com/openai/v1/chat/completions',key:process.env.GROQ_API_KEY||'',model:process.env.GROQ_CHAT_MODEL||'llama-3.3-70b-versatile'},
     {name:'cerebras',url:'https://api.cerebras.ai/v1/chat/completions',key:process.env.CEREBRAS_API_KEY||'',model:process.env.CEREBRAS_CHAT_MODEL||'llama-3.3-70b'},
-    {name:'mistral',url:'https://api.mistral.ai/v1/chat/completions',key:process.env.MISTRAL_API_KEY||'',model:process.env.MISTRAL_CHAT_MODEL||'mistral-small-latest'},
-    {name:'deepseek',url:'https://api.deepseek.com/chat/completions',key:process.env.DEEPSEEK_API_KEY||'',model:process.env.DEEPSEEK_CHAT_MODEL||'deepseek-chat'},
-    {name:'together',url:'https://api.together.xyz/v1/chat/completions',key:process.env.TOGETHER_API_KEY||'',model:process.env.TOGETHER_CHAT_MODEL||'meta-llama/Llama-3.3-70B-Instruct-Turbo'},
-    {name:'xai',url:'https://api.x.ai/v1/chat/completions',key:process.env.XAI_API_KEY||'',model:process.env.XAI_CHAT_MODEL||'grok-3-mini'},
     {name:'pollinations',url:'https://gen.pollinations.ai/v1/chat/completions',key:process.env.POLLINATIONS_API_KEY||'',model:process.env.POLLINATIONS_TEXT_MODEL||'openai'},
   ];
   for(const p of providers){
@@ -122,12 +118,7 @@ async function openAiCompatibleFallback(input:Record<string,unknown>, system:str
     try{
       const headers:any={'Content-Type':'application/json'};
       if(p.key) headers.Authorization=`Bearer ${p.key}`;
-      const attachmentData=String(input.attachmentData||'').trim();
-      const attachmentMime=String(input.attachmentMime||'').trim();
-      const userContent = attachmentData && attachmentMime.startsWith('image/')
-        ? [{type:'text',text:user},{type:'image_url',image_url:{url:`data:${attachmentMime};base64,${attachmentData}`}}]
-        : user;
-      const r=await fetch(p.url,{method:'POST',headers,body:JSON.stringify({model:p.model,messages:[{role:'system',content:system},{role:'user',content:userContent}],temperature:0.4})});
+      const r=await fetch(p.url,{method:'POST',headers,body:JSON.stringify({model:p.model,messages:[{role:'system',content:system},{role:'user',content:user}],temperature:0.4})});
       const d:any=await r.json();
       if(r.ok){const t=String(d?.choices?.[0]?.message?.content||'').trim();if(t)return t;}
       console.warn(`${p.name} fallback failed`,r.status,d?.error?.message||d?.error||'');
@@ -146,7 +137,11 @@ class GeminiText implements TextProvider {
   async generate(input: Record<string, unknown>): Promise<AiResult> {
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
     const isChat = input.mode === 'chat';
-    const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
+    const chatModels = [
+      process.env.GEMINI_CHAT_MODEL || 'gemini-3.5-flash-lite',
+      'gemini-3.1-flash-lite',
+      'gemini-3.5-flash',
+    ].filter((v, i, a) => v && a.indexOf(v) === i);
     const localDateTime = String(input.localDateTime || '').trim();
     const timeZone = String(input.timeZone || '').trim();
     const latitude = Number(input.latitude);
@@ -184,9 +179,22 @@ You are a professional YouTube SEO expert. User request/topic: "${topic}". Gener
     const toolConfig = isChat && Number.isFinite(latitude)&&Number.isFinite(longitude) ? {retrievalConfig:{latLng:{latitude,longitude}}} : undefined;
     try {
       if(!apiKey) throw new Error('GEMINI_API_KEY missing');
-      const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt},...(isChat&&input.attachmentData&&input.attachmentMime?[{inlineData:{mimeType:String(input.attachmentMime),data:String(input.attachmentData)}}]:[])]}],...(tools?{tools}:{}),...(toolConfig?{toolConfig}:{}),generationConfig:isChat?{}:{temperature:.8,responseMimeType:'application/json'}})});
-      const data:any=await response.json();
-      if(!response.ok){const raw=JSON.stringify(data);if(response.status===429||/RESOURCE_EXHAUSTED|quota/i.test(raw)){throw new Error(/PerDay|per day|daily/i.test(raw)?'GEMINI_DAILY_QUOTA':'GEMINI_RATE_LIMIT');}throw new Error(String(data?.error?.message||`Gemini API failed with status ${response.status}`));}
+      let lastError: any = null;
+      let data: any = null;
+      let usedModel = chatModels[0];
+      for (const model of chatModels) {
+        usedModel = model;
+        try {
+          const response=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{method:'POST',headers:{'Content-Type':'application/json','x-goog-api-key':apiKey},body:JSON.stringify({contents:[{role:'user',parts:[{text:prompt},...(isChat&&input.attachmentData&&input.attachmentMime?[{inlineData:{mimeType:String(input.attachmentMime),data:String(input.attachmentData)}}]:[])]}],...(tools?{tools}:{}),...(toolConfig?{toolConfig}:{}),generationConfig:isChat?{}:{temperature:.8,responseMimeType:'application/json'}})});
+          data=await response.json();
+          if(response.ok) break;
+          const raw=JSON.stringify(data);
+          lastError = new Error(/PerDay|per day|daily/i.test(raw)?'GEMINI_DAILY_QUOTA':(response.status===429||/RESOURCE_EXHAUSTED|quota/i.test(raw)?'GEMINI_RATE_LIMIT':String(data?.error?.message||`Gemini API failed with status ${response.status}`)));
+        } catch (e) {
+          lastError = e;
+        }
+      }
+      if(!data || !data.candidates) throw (lastError || new Error('Gemini returned no response'));
       const text=String(data?.candidates?.[0]?.content?.parts?.map((part:any)=>part?.text||'').join('').trim()||'');
       if(!text)throw new Error('Gemini returned empty response');
       if(isChat){
@@ -200,7 +208,7 @@ You are a professional YouTube SEO expert. User request/topic: "${topic}". Gener
       }
       try{const result=JSON.parse(text);return{titles:Array.isArray(result.titles)?result.titles:[],description:result.description||'',tags:Array.isArray(result.tags)?result.tags:[],hashtags:Array.isArray(result.hashtags)?result.hashtags:[]};}catch{return{titles:[],description:text,tags:[],hashtags:[]};}
     } catch(primaryError:any) {
-      if(!isChat || (input.attachmentData && !String(input.attachmentMime||'').startsWith('image/'))){throw primaryError;}
+      if(!isChat || input.attachmentData){throw primaryError;}
       const system=`You are Khobragade AI, created by Nitesh Khobragade. Selected voice gender: ${voiceGender}. Use feminine first-person grammar if female. Answer in the user's language. Do not claim you are text-only. For current/search/news requests use only supplied web context and identify sources. Web context:\n${external.text||'none'}`;
       const answer=await openAiCompatibleFallback(input,system,userMessage);
       const normalized=voiceGender==='female'?normalizeFemale(answer):answer;

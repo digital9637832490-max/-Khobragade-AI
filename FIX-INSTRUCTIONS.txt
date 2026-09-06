@@ -1,0 +1,21 @@
+KHOBRAGADE AI — CHAT + VOICE FIX
+
+Use these files from this ZIP and REPLACE the existing files at the exact paths:
+
+1) backend/src/ai/providers.ts
+2) android-app/lib/screens/chat.dart
+
+Do NOT rename them and do NOT put them in a new folder.
+
+What this fixes:
+- Chat AI no longer depends on only the old Gemini model; it tries Gemini 3.5 Flash-Lite first, then Gemini 3.1 Flash-Lite, then Gemini 3.5 Flash.
+- Google Gemini API key can be supplied as GEMINI_API_KEY or GOOGLE_GEMINI_API_KEY.
+- Voice Assistant no longer opens the failing Gemini Live websocket as the only path. It uses the phone microphone speech recognition + the existing Khobragade AI chat + phone TTS, with automatic continuous listen/reply flow.
+- The existing UI, login, admin panel, chat layout, gender selection, attachments and other features are preserved.
+
+After replacing:
+A) Backend/Render: redeploy the backend so providers.ts is rebuilt.
+B) Android: rebuild the APK from the replaced chat.dart.
+
+IMPORTANT:
+The backend still needs a valid AI provider key. For Gemini, set GEMINI_API_KEY in Render Environment. If the old key/project has exhausted its quota, code changes alone cannot create quota; use a valid Gemini key/project or configure one of the existing fallback provider keys in Render (OPENROUTER_API_KEY, GROQ_API_KEY, CEREBRAS_API_KEY, or POLLINATIONS_API_KEY).
