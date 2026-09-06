@@ -9,6 +9,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:video_player/video_player.dart';
 import 'package:geolocator/geolocator.dart';
 import '../api.dart';
+import '../config.dart';
 import '../live_voice.dart';
 import '../services/app_update_service.dart';
 class ChatScreen extends StatefulWidget{final Future<void> Function()? onLogout;const ChatScreen({super.key,this.onLogout});@override State<ChatScreen> createState()=>_ChatScreenState();}
