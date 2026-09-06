@@ -56,7 +56,6 @@ adminRouter.patch('/settings/:key', async(req,res,next)=>{
   }catch(e){next(e)}
 });
 
-
 adminRouter.get('/projects', async(_req,res,next)=>{try{const q=await pool.query(`SELECT p.*,u.name user_name,u.email FROM projects p JOIN users u ON u.id=p.user_id ORDER BY p.created_at DESC LIMIT 500`);res.json(q.rows)}catch(e){next(e)}});
 adminRouter.get('/jobs', async(_req,res,next)=>{try{const q=await pool.query(`SELECT j.*,u.name user_name,u.email FROM ai_jobs j JOIN users u ON u.id=j.user_id ORDER BY j.created_at DESC LIMIT 500`);res.json(q.rows)}catch(e){next(e)}});
 adminRouter.delete('/jobs/:id', async(req,res,next)=>{try{await pool.query(`DELETE FROM ai_jobs WHERE id=$1 AND status IN ('failed','completed')`,[req.params.id]);await audit(req.auth!.id,'job.delete','ai_job',req.params.id);res.json({ok:true})}catch(e){next(e)}});

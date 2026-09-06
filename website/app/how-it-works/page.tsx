@@ -1,1 +1,1 @@
-import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.how-it-works" fallbackTitle="How It Works" fallbackBody="Sign in, open Khobragade AI, choose your language, chat naturally, create images or videos, and manage your saved projects."/>}
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.how-it-works" fallbackTitle="How It Works" fallbackBody="Register, choose an AI tool, generate, preview and save your project."/>}

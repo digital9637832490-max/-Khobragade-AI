@@ -1,1 +1,1 @@
-import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.pricing" fallbackTitle="Plans & Features" fallbackBody="Khobragade AI provides AI chat, image and video creation, YouTube tools and voice features. No recharge system is required."/>}
+import CmsPublicPage from '../../components/CmsPublicPage';export default function Page(){return <CmsPublicPage cmsKey="page.pricing" fallbackTitle="Pricing" fallbackBody="All listed AI features are available without a coin system."/>}

@@ -1,0 +1,52 @@
+Khobragade AI — Final Root-Cause Fix
+
+MAIN FIXED AREAS
+1. Chat response no longer waits on the background worker; /ai/chat now returns the AI response directly, preventing the stuck "Thinking..." state.
+2. Photo/file attachment is sent directly to the Gemini multimodal chat path.
+3. Image generation uses current Gemini image models with a Pollinations fallback when configured.
+4. Video generation uses Veo 3.1 with Pollinations video fallback when configured; Android now has in-app video playback through the authenticated backend proxy.
+5. App Update checks the backend manifest first, then GitHub Releases, and has a working Update Now path.
+6. Coins / Recharge / Wallet / coin charging UI and code paths were removed from the user/admin/web flows; legacy DB columns are kept only for backward compatibility unless the included migration is run.
+7. Voice settings now show readable names and a working Preview button; live voice model updated to the current native-audio model.
+8. Android app build bumped to 1.0.1+2.
+
+FILES CHANGED
+admin-panel/app/ai-tools/page.tsx
+admin-panel/app/dashboard/page.tsx
+admin-panel/app/projects/page.tsx
+admin-panel/app/users/page.tsx
+admin-panel/components/AdminShell.tsx
+android-app/lib/admin_panel.dart
+android-app/lib/screens/chat.dart
+android-app/lib/services/app_update_service.dart
+android-app/pubspec.yaml
+backend/RENDER-SETUP.txt
+backend/src/ai/providers.ts
+backend/src/routes/admin.ts
+backend/src/routes/auth.ts
+backend/src/routes/user.ts
+backend/src/server.ts
+backend/src/worker.ts
+database/migrations/2026-09-06-remove-coins.sql
+database/schema.sql
+database/seed.sql
+website/app/ai-description/page.tsx
+website/app/ai-tags/page.tsx
+website/app/ai-title/page.tsx
+website/app/chat/page.tsx
+website/app/dashboard/page.tsx
+website/app/globals.css
+website/app/how-it-works/page.tsx
+website/app/page.tsx
+website/app/pricing/page.tsx
+website/app/profile/page.tsx
+website/app/projects/page.tsx
+website/app/voice-over/page.tsx
+website/components/DashboardShell.tsx
+
+FILES REMOVED
+backend/src/wallet.ts
+admin-panel/app/payments/page.tsx
+admin-panel/app/coin-management/page.tsx
+website/app/coins/page.tsx
+website/app/transactions/page.tsx

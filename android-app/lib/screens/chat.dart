@@ -9,7 +9,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
 import '../api.dart';
 import '../live_voice.dart';
-class ChatScreen extends StatefulWidget{final Future<void> Function()? onLogout;const ChatScreen({super.key,this.onLogout});@override State<ChatScreen> createState()=>_ChatScreenState();}
+import '../config.dart';
+import 'package:video_player/video_player.dart';
+class ChatScreen extends StatefulWidget{const ChatScreen({super.key});@override State<ChatScreen> createState()=>_ChatScreenState();}
 class _ChatScreenState extends State<ChatScreen>{
  final api=Api(),input=TextEditingController(),scroll=ScrollController(),speech=stt.SpeechToText(),tts=FlutterTts(),imagePicker=ImagePicker();final voicePhase=ValueNotifier<String>('ready'),voiceWords=ValueNotifier<String>('');LiveVoiceSession? liveVoice;String lastVoiceText='';bool voiceSending=false;List<Map<String,String>> messages=[];List<Map<String,dynamic>> chatSessions=[];String currentChatId='';bool busy=false,listening=false,voiceMode=false,voiceRestarting=false;String voiceGender='female';String voiceName='';String language='hi';List<Map<String,dynamic>> availableVoices=[];String? attachmentName,attachmentMime,attachmentData;Map<String,dynamic>? maintenance;DateTime? quotaUntil;String quotaKind='';Timer? clock;
  @override void initState(){super.initState();clock=Timer.periodic(const Duration(seconds:1),(_){if(mounted&&(quotaUntil!=null||maintenance?['appActive']==true))setState((){});});load();}
@@ -140,7 +142,7 @@ class _ChatScreenState extends State<ChatScreen>{
   );
  }
  Future<Map<String,dynamic>> waitJob(String id,{bool video=false})async{final max=video?360:180;final delay=video?const Duration(milliseconds:2500):const Duration(milliseconds:650);for(var i=0;i<max;i++){await Future.delayed(delay);final j=await api.request('/jobs/$id');if(j['status']=='completed')return Map<String,dynamic>.from(j['result']??{});if(j['status']=='failed')throw Exception(j['error_message']??'Generation failed');}throw Exception(video?'Video is still processing. Please try again shortly.':'Response is taking too long');}
- bool wantsImage(String t){final x=t.toLowerCase().replaceAll(RegExp(r'\s+'),' ').trim();final hasImage=RegExp(r'image|photo|picture|wallpaper|background|thumbnail|poster|logo|banner|tasveer|tasvir|pic|तस्वीर|इमेज|फोटो|चित्र|वॉलपेपर|पोस्टर|लोगो|बैनर').hasMatch(x);final hasMake=RegExp(r'bana|banao|banado|bana do|banakar|banana|generate|create|make|draw|design|बना|बनाओ|बना दो|बनाकर|बनाना|जनरेट|क्रिएट|डिजाइन|डिज़ाइन').hasMatch(x);return hasImage&&hasMake;}
+ bool wantsImage(String t){final x=t.toLowerCase().replaceAll(RegExp(r'\s+'),' ').trim();final hasImage=RegExp(r'image|photo|picture|thumbnail|poster|logo|banner|tasveer|tasvir|pic|तस्वीर|इमेज|फोटो|चित्र|पोस्टर|लोगो|बैनर').hasMatch(x);final hasMake=RegExp(r'bana|banao|banado|bana do|banakar|banana|generate|create|make|draw|design|बना|बनाओ|बना दो|बनाकर|बनाना|जनरेट|क्रिएट|डिजाइन|डिज़ाइन').hasMatch(x);return hasImage&&hasMake;}
  bool wantsVideo(String t){final x=t.toLowerCase().replaceAll(RegExp(r'\s+'),' ').trim();final hasVideo=RegExp(r'video|reel|shorts|clip|वीडियो|रील|शॉर्ट|शॉर्ट्स|क्लिप').hasMatch(x);final hasMake=RegExp(r'bana|banao|banado|bana do|banakar|banana|generate|create|make|animate|बना|बनाओ|बना दो|बनाकर|बनाना|जनरेट|क्रिएट').hasMatch(x);return hasVideo&&hasMake;}
  String imagePrompt(String t)=>t.replaceAll(RegExp(r'(?i)^(demo\s*)?(image|photo|picture|tasveer|tasvir|तस्वीर|इमेज|फोटो|चित्र)\s*(generate|create|bana|banao|banado|जनरेट|क्रिएट|बना|बनाओ|बना दो)?\s*'), '').trim().isEmpty?t:t;
  Future<void> speak(String text,{bool continueVoice=false})async{voicePhase.value='speaking';await tts.stop();await tts.awaitSpeakCompletion(true);await tts.setLanguage(language=='mr'?'mr-IN':language=='hi'?'hi-IN':'en-IN');await tts.setSpeechRate(.48);final voices=await tts.getVoices;try{
@@ -185,9 +187,60 @@ class _ChatScreenState extends State<ChatScreen>{
   }catch(_){ }
   return out;
  }
- Future<void> send([String? value,bool speakReply=false])async{final text=(value??input.text).trim();if((text.isEmpty&&attachmentData==null)||busy)return;final sentText=text.isEmpty?'Attached file: ${attachmentName??'file'}':text;FocusScope.of(context).unfocus();setState((){messages.add({'role':'user','content':attachmentName==null?sentText:'$sentText\n📎 $attachmentName'});input.clear();busy=true;});await save();try{Map<String,dynamic> job;String spoken='';if(wantsVideo(sentText)){voicePhase.value='thinking';final ctx=await _clientContext();String? previousImage;for(final m in messages.reversed){final c=m['content']??'';if(m['role']=='assistant'&&c.startsWith('[[IMAGE]]')){previousImage=c.substring(9);break;}}job=await api.request('/ai/video',method:'POST',body:{'prompt':sentText,if(previousImage!=null)'imageDataUrl':previousImage,...ctx});final r=await waitJob(job['id'].toString(),video:true);final uri=(r['videoUri']??r['videoUrl']??r['videoDataUrl']??'').toString();final answer=uri.isEmpty?'✅ Video generate ho gaya.':'[[VIDEO]]$uri';setState(()=>messages.add({'role':'assistant','content':answer}));spoken='वीडियो तैयार हो गया है।';}else if(wantsImage(sentText)){voicePhase.value='thinking';job=await api.request('/ai/photo',method:'POST',body:{'prompt':sentText});final r=await waitJob(job['id'].toString());final img=(r['imageDataUrl']??r['imageUrl']??'').toString();if(img.isEmpty)throw Exception('Image generated but image data missing');setState(()=>messages.add({'role':'assistant','content':'[[IMAGE]]$img'}));spoken='इमेज तैयार हो गई है।';}else{voicePhase.value='thinking';final history=messages.length>20?messages.sublist(messages.length-20):messages;final ctx=await _clientContext();job=await api.request('/ai/chat',method:'POST',body:{'message':sentText,'history':history,'voiceGender':voiceGender,'language':language,...ctx,if(attachmentData!=null)'attachmentName':attachmentName,if(attachmentData!=null)'attachmentMime':attachmentMime,if(attachmentData!=null)'attachmentData':attachmentData});final r=await waitJob(job['id'].toString());final answer=(r['answer']??r['description']??'').toString();setState(()=>messages.add({'role':'assistant','content':answer}));spoken=answer;}if((speakReply||voiceMode)&&spoken.isNotEmpty)await speak(spoken,continueVoice:false);if(mounted)setState((){attachmentName=null;attachmentMime=null;attachmentData=null;});}catch(e){final raw=e.toString().replaceFirst('Exception: ','');String msg='⚠️ $raw';if(raw.contains('ALL_IMAGE_PROVIDERS_EXHAUSTED'))msg='⚠️ अभी image generation की सभी configured AI services उपलब्ध नहीं हैं। कृपया थोड़ी देर बाद फिर कोशिश करें।';else if(raw.contains('IMAGE_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Image generation service के लिए provider access/billing चाहिए।';else if(raw.contains('ALL_AI_PROVIDERS_EXHAUSTED'))msg='⚠️ अभी सभी configured AI services उपलब्ध नहीं हैं। कृपया थोड़ी देर बाद फिर कोशिश करें।';else if(raw.contains('GEMINI_DAILY_QUOTA')){quotaKind='daily';quotaUntil=DateTime.now().add(const Duration(hours:24));msg='आज की AI उपयोग सीमा पूरी हो गई है। अगले quota reset के बाद फिर कोशिश करें।';}else if(raw.contains('VIDEO_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Video generation ke liye Google billing/model access chahiye.';else if(raw.contains('GEMINI_RATE_LIMIT')||raw.contains('429')){quotaKind='minute';quotaUntil=DateTime.now().add(const Duration(minutes:1));msg='अभी बहुत requests आ गई हैं। थोड़ी देर बाद फिर कोशिश करें।';}setState(()=>messages.add({'role':'assistant','content':msg}));}finally{busy=false;await save();if(mounted)setState((){});Future.delayed(const Duration(milliseconds:40),()=>scroll.hasClients?scroll.animateTo(scroll.position.maxScrollExtent,duration:const Duration(milliseconds:140),curve:Curves.easeOut):null);}}
+ Future<void> send([String? value,bool speakReply=false])async{
+  final text=(value??input.text).trim();
+  if((text.isEmpty&&attachmentData==null)||busy)return;
+  FocusScope.of(context).unfocus();
+  final sentText=text.isEmpty?'Attached file: ${attachmentName??'file'}':text;
+  final outgoingAttachmentData=attachmentData; final outgoingAttachmentName=attachmentName; final outgoingAttachmentMime=attachmentMime;
+  setState((){messages.add({'role':'user','content':outgoingAttachmentName==null?sentText:'$sentText\n📎 $outgoingAttachmentName'});input.clear();busy=true;});
+  await save();
+  try{
+    String spoken='';
+    if(wantsVideo(sentText)){
+      voicePhase.value='thinking';
+      final ctx=await _clientContext();
+      String? previousImage;
+      for(final m in messages.reversed){final c=m['content']??'';if(m['role']=='assistant'&&c.startsWith('[[IMAGE]]')){previousImage=c.substring(9);break;}}
+      final job=await api.request('/ai/video',method:'POST',body:{'prompt':sentText,if(previousImage!=null)'imageDataUrl':previousImage,...ctx});
+      final r=await waitJob(job['id'].toString(),video:true);
+      final uri=(r['videoUri']??r['videoUrl']??'').toString();
+      final answer=uri.isEmpty?'⚠️ Video generated but no video file was returned.':'[[VIDEO]]${Config.apiBaseUrl}/ai/video/${job['id']}/file';
+      setState(()=>messages.add({'role':'assistant','content':answer})); spoken='वीडियो तैयार हो गया है।';
+    }else if(wantsImage(sentText)){
+      voicePhase.value='thinking';
+      final job=await api.request('/ai/photo',method:'POST',body:{'prompt':sentText});
+      final r=await waitJob(job['id'].toString());
+      final img=(r['imageDataUrl']??r['imageUrl']??'').toString();
+      if(img.isEmpty)throw Exception('Image generated but image data missing');
+      setState(()=>messages.add({'role':'assistant','content':'[[IMAGE]]$img'})); spoken='इमेज तैयार हो गई है।';
+    }else{
+      voicePhase.value='thinking';
+      final history=messages.length>20?messages.sublist(messages.length-20):messages;
+      final ctx=await _clientContext();
+      final r=await api.request('/ai/chat',method:'POST',body:{'message':sentText,'history':history,'voiceGender':voiceGender,'language':language,...ctx,if(outgoingAttachmentData!=null)'attachmentName':outgoingAttachmentName,if(outgoingAttachmentData!=null)'attachmentMime':outgoingAttachmentMime,if(outgoingAttachmentData!=null)'attachmentData':outgoingAttachmentData});
+      final answer=(r['answer']??r['description']??'').toString().trim();
+      if(answer.isEmpty)throw Exception('AI returned an empty response');
+      setState(()=>messages.add({'role':'assistant','content':answer})); spoken=answer;
+    }
+    if((speakReply||voiceMode)&&spoken.isNotEmpty)await speak(spoken,continueVoice:false);
+    if(mounted)setState((){attachmentName=null;attachmentMime=null;attachmentData=null;});
+  }catch(e){
+    final raw=e.toString().replaceFirst('Exception: ','');
+    String msg='⚠️ $raw';
+    if(raw.contains('ALL_IMAGE_PROVIDERS_EXHAUSTED'))msg='⚠️ Image generation service is unavailable right now. Please check the configured Gemini/Pollinations key.';
+    else if(raw.contains('IMAGE_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Gemini image generation needs an enabled image-generation model/project. Pollinations can be used as fallback when configured.';
+    else if(raw.contains('ALL_AI_PROVIDERS_EXHAUSTED'))msg='⚠️ All configured AI providers are unavailable right now. Please try again.';
+    else if(raw.contains('VIDEO_PROVIDER_NOT_CONFIGURED'))msg='⚠️ Video generation is not configured. Add a Gemini Veo-enabled key or POLLINATIONS_API_KEY on Render.';
+    else if(raw.contains('GEMINI_RATE_LIMIT')||raw.contains('429')){quotaKind='minute';quotaUntil=DateTime.now().add(const Duration(minutes:1));msg='अभी बहुत requests आ गई हैं। थोड़ी देर बाद फिर कोशिश करें।';}
+    setState(()=>messages.add({'role':'assistant','content':msg}));
+  }finally{
+    busy=false; await save(); if(mounted)setState((){});
+    Future.delayed(const Duration(milliseconds:40),()=>scroll.hasClients?scroll.animateTo(scroll.position.maxScrollExtent,duration:const Duration(milliseconds:140),curve:Curves.easeOut):null);
+  }
+ }
  Future<void> _submitVoiceWords()async{if(voiceSending||busy||!voiceMode)return;final said=lastVoiceText.trim();if(said.isEmpty)return;voiceSending=true;lastVoiceText='';await speech.stop();if(mounted)setState(()=>listening=false);voicePhase.value='thinking';try{await send(said,true);}finally{voiceSending=false;if(voiceMode&&mounted&&!busy&&!voiceRestarting){voiceRestarting=true;try{await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted&&!busy&&!voiceSending){voicePhase.value='listening';await mic(true,0);}}finally{voiceRestarting=false;}}}}
- Future<void> mic([bool autoSend=false,int retry=0])async{if(busy||voiceSending)return;if(listening){await speech.stop();if(mounted)setState(()=>listening=false);await Future.delayed(const Duration(milliseconds:120));}lastVoiceText='';voiceWords.value='';final ok=await speech.initialize(onStatus:(status){final active=status=='listening';if(active)voicePhase.value='listening';if(mounted)setState(()=>listening=active);if(autoSend&&voiceMode&&(status=='done'||status=='notListening')&&!busy&&!voiceSending){if(lastVoiceText.trim().isNotEmpty){Future.microtask(_submitVoiceWords);}else if(retry<3){Future.delayed(const Duration(milliseconds:450),()=>mic(true,retry+1));}}},onError:(e){if(mounted)setState(()=>listening=false);voicePhase.value='error';if(autoSend&&voiceMode&&!busy&&!voiceSending&&retry<3){Future.delayed(const Duration(milliseconds:650),()=>mic(true,retry+1));}});if(!ok){voicePhase.value='error';if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission / speech service unavailable. You can still type normally.')));return;}String? localeId;try{final locales=await speech.locales();final wanted=language=='mr'?'mr':language=='en'?'en':'hi';final hit=locales.where((l)=>l.localeId.toLowerCase().startsWith(wanted)).toList();localeId=hit.isNotEmpty?hit.first.localeId:(await speech.systemLocale())?.localeId;}catch(_){}voicePhase.value='listening';if(mounted)setState(()=>listening=true);await speech.listen(listenOptions:stt.SpeechListenOptions(localeId:localeId,listenFor:const Duration(seconds:60),pauseFor:const Duration(seconds:2),partialResults:true,listenMode:stt.ListenMode.dictation,cancelOnError:false),onResult:(r){final words=r.recognizedWords.trim();if(words.isNotEmpty){lastVoiceText=words;input.text=words;input.selection=TextSelection.collapsed(offset:input.text.length);voiceWords.value=words;if(mounted)setState((){});}if(r.finalResult&&autoSend&&lastVoiceText.isNotEmpty){Future.microtask(_submitVoiceWords);}});}
+ Future<void> mic([bool autoSend=false,int retry=0])async{if(busy||voiceSending)return;if(listening){await speech.stop();if(mounted)setState(()=>listening=false);await Future.delayed(const Duration(milliseconds:120));}lastVoiceText='';voiceWords.value='';final ok=await speech.initialize(onStatus:(status){final active=status=='listening';if(active)voicePhase.value='listening';if(mounted)setState(()=>listening=active);if(autoSend&&voiceMode&&(status=='done'||status=='notListening')&&!busy&&!voiceSending){if(lastVoiceText.trim().isNotEmpty){Future.microtask(_submitVoiceWords);}else if(retry<3){Future.delayed(const Duration(milliseconds:450),()=>mic(true,retry+1));}}},onError:(e){if(mounted)setState(()=>listening=false);voicePhase.value='error';if(autoSend&&voiceMode&&!busy&&!voiceSending&&retry<3){Future.delayed(const Duration(milliseconds:650),()=>mic(true,retry+1));}});if(!ok){voicePhase.value='error';if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission / speech service unavailable')));return;}String? localeId;try{final locales=await speech.locales();final wanted=language=='mr'?'mr':language=='en'?'en':'hi';final hit=locales.where((l)=>l.localeId.toLowerCase().startsWith(wanted)).toList();localeId=hit.isNotEmpty?hit.first.localeId:(await speech.systemLocale())?.localeId;}catch(_){}voicePhase.value='listening';if(mounted)setState(()=>listening=true);await speech.listen(listenOptions:stt.SpeechListenOptions(localeId:localeId,listenFor:const Duration(seconds:60),pauseFor:const Duration(seconds:2),partialResults:true,listenMode:stt.ListenMode.dictation,cancelOnError:false),onResult:(r){final words=r.recognizedWords.trim();if(words.isNotEmpty){lastVoiceText=words;input.text=words;input.selection=TextSelection.collapsed(offset:input.text.length);voiceWords.value=words;if(mounted)setState((){});}if(r.finalResult&&autoSend&&lastVoiceText.isNotEmpty){Future.microtask(_submitVoiceWords);}});}
  Future<void> fresh()async{await newChat();}
  Future<void> stopVoiceConversation()async{voiceMode=false;voicePhase.value='ready';voiceWords.value='';await speech.stop();await tts.stop();await liveVoice?.stop();liveVoice=null;await save();if(mounted)setState((){});}
  Future<void> openVoiceConversation()async{
@@ -206,6 +259,31 @@ class _ChatScreenState extends State<ChatScreen>{
   }
   await page;
   if(voiceMode)await stopVoiceConversation();
+ }
+ String _voiceLabel(Map<String,dynamic> v){
+  final n='${v['name']??''}'.toLowerCase();
+  final l='${v['locale']??''}'.toLowerCase();
+  final lang=l.startsWith('mr')?'Marathi':l.startsWith('hi')?'Hindi':l.startsWith('en')?'English':'Voice';
+  final female=RegExp(r'female|heera|swara|veena|zira|samantha|x-hia|x-hic').hasMatch(n);
+  final gender=female?'Female':'Male';
+  String style='Natural';
+  if(n.contains('network'))style='Natural';
+  if(n.contains('local'))style='Clear';
+  return '$lang $gender – $style';
+ }
+ Future<void> _voiceSettings()async{
+  final voices=availableVoices.where((v){final l='${v['locale']??''}'.toLowerCase();return l.startsWith('hi')||l.startsWith('en')||l.startsWith('mr');}).toList();
+  if(!mounted)return;
+  await showModalBottomSheet<void>(context:context,showDragHandle:true,builder:(c)=>StatefulBuilder(builder:(c,setSheet){
+    final filtered=voices.where((v){final n='${v['name']}'.toLowerCase();final female=RegExp(r'female|heera|swara|veena|zira|samantha|x-hia|x-hic').hasMatch(n);return voiceGender=='female'?female:!female;}).toList();
+    return SafeArea(child:ListView(padding:const EdgeInsets.fromLTRB(14,4,14,18),children:[
+      const ListTile(title:Text('Voice Assistant',style:TextStyle(fontWeight:FontWeight.w800)),subtitle:Text('Choose a voice and preview it')) ,
+      Row(children:[Expanded(child:ChoiceChip(label:const Text('👩 Female'),selected:voiceGender=='female',onSelected:(_){voiceGender='female';voiceName='';setSheet((){});setState((){});})),const SizedBox(width:8),Expanded(child:ChoiceChip(label:const Text('👨 Male'),selected:voiceGender=='male',onSelected:(_){voiceGender='male';voiceName='';setSheet((){});setState((){});})),]),
+      const Divider(),
+      ...filtered.map((v){final raw='${v['name']}';final selected=raw==voiceName;final label=_voiceLabel(v);return ListTile(leading:Icon(selected?Icons.check_circle:Icons.record_voice_over),title:Text(label),subtitle:Text('${v['locale']??''}',style:const TextStyle(fontSize:11,color:Colors.black45)),trailing:IconButton(icon:const Icon(Icons.play_circle_outline),tooltip:'Preview',onPressed:()async{await tts.stop();try{await tts.setLanguage('${v['locale']??(language=='mr'?'mr-IN':language=='en'?'en-IN':'hi-IN')}');await tts.setVoice({'name':raw,'locale':'${v['locale']??''}'});await tts.speak(language=='mr'?'नमस्कार, मी Khobragade AI आहे.':'${language=='en'?'Hello, I am Khobragade AI.':'नमस्ते, मैं Khobragade AI हूँ।'}');}catch(_){}}),onTap:()async{voiceName=raw;await save();setSheet((){});setState((){});});}),
+      if(filtered.isEmpty)const Padding(padding:EdgeInsets.all(20),child:Text('No compatible system voices are installed on this device.'))
+    ]));
+  }));
  }
  Future<void> _searchChats()async{final q=await showDialog<String>(context:context,builder:(c){final ctrl=TextEditingController();return AlertDialog(title:const Text('Search chats'),content:TextField(controller:ctrl,autofocus:true,decoration:const InputDecoration(hintText:'Search conversation…'),onSubmitted:(v)=>Navigator.pop(c,v)),actions:[TextButton(onPressed:()=>Navigator.pop(c),child:const Text('Cancel')),FilledButton(onPressed:()=>Navigator.pop(c,ctrl.text),child:const Text('Search'))]);});if(q==null||q.trim().isEmpty)return;final matches=chatSessions.where((x)=>'${x['title']}'.toLowerCase().contains(q.toLowerCase())||jsonEncode(x['messages']).toLowerCase().contains(q.toLowerCase())).toList();if(!mounted)return;showModalBottomSheet(context:context,builder:(c)=>SafeArea(child:SizedBox(height:420,child:ListView(children:[const ListTile(title:Text('Search results',style:TextStyle(fontWeight:FontWeight.bold))),...matches.map((x)=>ListTile(title:Text('${x['title']}'),onTap:()=>openChat('${x['id']}')))]))));}
  Widget build(BuildContext context){
@@ -234,37 +312,14 @@ class _ChatScreenState extends State<ChatScreen>{
   }
   return Scaffold(
    backgroundColor:const Color(0xfff8f9fc),
-   drawer:Drawer(child:SafeArea(child:Column(children:[ListTile(leading:const Icon(Icons.add_comment_outlined),title:const Text('New Chat'),onTap:()=>newChat().then((_)=>Navigator.pop(context))),ListTile(leading:const Icon(Icons.search),title:const Text('Search chats'),onTap:()=>_searchChats()),ListTile(leading:const Icon(Icons.language),title:Text(language=='en'?'English':language=='mr'?'मराठी':'हिंदी'),subtitle:const Text('English • हिंदी • मराठी'),onTap:()=>chooseLanguage()),const Divider(),const ListTile(title:Text('Chat history',style:TextStyle(fontWeight:FontWeight.bold))),Expanded(child:ListView.builder(itemCount:chatSessions.length,itemBuilder:(c,i){final x=chatSessions[i];return ListTile(selected:'${x['id']}'==currentChatId,title:Text('${x['title']??'New Chat'}',maxLines:1,overflow:TextOverflow.ellipsis),leading:const Icon(Icons.chat_bubble_outline),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()=>deleteChat('${x['id']}')),onTap:()=>openChat('${x['id']}'));})),const Divider(),ListTile(leading:const Icon(Icons.delete_sweep_outlined),title:const Text('Delete all chats'),onTap:()=>deleteAllChats()),if(widget.onLogout!=null)ListTile(leading:const Icon(Icons.logout),title:const Text('Logout'),onTap:()async{await widget.onLogout!();})]))),
+   drawer:Drawer(child:SafeArea(child:Column(children:[ListTile(leading:const Icon(Icons.add_comment_outlined),title:const Text('New Chat'),onTap:()=>newChat().then((_)=>Navigator.pop(context))),ListTile(leading:const Icon(Icons.search),title:const Text('Search chats'),onTap:()=>_searchChats()),ListTile(leading:const Icon(Icons.language),title:Text(language=='en'?'English':language=='mr'?'मराठी':'हिंदी'),onTap:()=>chooseLanguage()),const Divider(),const ListTile(title:Text('Chat history',style:TextStyle(fontWeight:FontWeight.bold))),Expanded(child:ListView.builder(itemCount:chatSessions.length,itemBuilder:(c,i){final x=chatSessions[i];return ListTile(selected:'${x['id']}'==currentChatId,title:Text('${x['title']??'New Chat'}',maxLines:1,overflow:TextOverflow.ellipsis),leading:const Icon(Icons.chat_bubble_outline),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()=>deleteChat('${x['id']}')),onTap:()=>openChat('${x['id']}'));})),const Divider(),ListTile(leading:const Icon(Icons.delete_sweep_outlined),title:const Text('Delete all chats'),onTap:()=>deleteAllChats())]))),
    appBar:AppBar(
     backgroundColor:Colors.white,
     leading:Builder(builder:(c)=>IconButton(icon:const Icon(Icons.menu),onPressed:()=>Scaffold.of(c).openDrawer())),
     title:Row(children:[ClipRRect(borderRadius:BorderRadius.circular(7),child:Image.asset('assets/khobragade_ai_logo.png',width:30,height:30,fit:BoxFit.cover)),const SizedBox(width:8),const Text('Khobragade AI',style:TextStyle(fontWeight:FontWeight.w800))]),
     actions:[
      IconButton(tooltip:'Language',onPressed:chooseLanguage,icon:const Icon(Icons.language)),
-     PopupMenuButton<String>(
-  icon:Icon(voiceGender=='female'?Icons.woman:Icons.man),
-  onSelected:(v)async{
-    if(v=='female'||v=='male'){voiceGender=v;voiceName='';await save();setState((){});return;}
-    voiceName=v;await save();setState((){});
-  },
-  itemBuilder:(_){
-    final prefix=voiceGender=='female'?'female':'male';
-    final matching=availableVoices.where((v){
-      final n='${v['name']}'.toLowerCase(),l='${v['locale']}'.toLowerCase();
-      if(!(l.startsWith('hi')||l.startsWith('en')))return false;
-      return prefix=='female'?RegExp('female|heera|swara|veena|zira|samantha|hindi.*f|x-hia|x-hic').hasMatch(n)
-        :RegExp('male|ravi|hemant|david|mark|hindi.*m|x-hid|x-hie').hasMatch(n);
-    }).toList();
-    final unique=<String>{};final items=<PopupMenuEntry<String>>[
-      const PopupMenuItem(value:'female',child:Text('👩 Female voices')),
-      const PopupMenuItem(value:'male',child:Text('👨 Male voices')),
-      const PopupMenuDivider(),
-    ];
-    for(final v in matching){final n='${v['name']}';if(n.isNotEmpty&&unique.add(n))items.add(PopupMenuItem(value:n,child:Text(n,maxLines:1,overflow:TextOverflow.ellipsis)));}
-    if(matching.isEmpty)items.add(const PopupMenuItem(enabled:false,child:Text('No extra system voices installed')));
-    return items;
-  },
-),
+     IconButton(tooltip:'Voice settings',onPressed:_voiceSettings,icon:Icon(voiceGender=='female'?Icons.woman:Icons.man)),
      IconButton(onPressed:fresh,icon:const Icon(Icons.add_comment_outlined)),
     ],
    ),
@@ -275,7 +330,9 @@ class _ChatScreenState extends State<ChatScreen>{
   );
  }
  Widget _welcome()=>ListView(padding:const EdgeInsets.all(24),children:[const SizedBox(height:55),Center(child:ClipRRect(borderRadius:BorderRadius.circular(24),child:Image.asset('assets/khobragade_ai_logo.png',width:86,height:86,fit:BoxFit.cover))),const SizedBox(height:14),const Text('Khobragade AI',textAlign:TextAlign.center,style:TextStyle(fontSize:28,fontWeight:FontWeight.w800)),const SizedBox(height:10),const Text('Ask anything — general questions, study, writing, coding, business, proposals, translation, YouTube and everyday help.',textAlign:TextAlign.center,style:TextStyle(color:Colors.black54,height:1.5))]);
- Widget _bubble(Map<String,String> m){final user=m['role']=='user';final content=m['content']??'';Widget body;if(content.startsWith('[[IMAGE]]')){final d=content.substring(9);try{if(d.startsWith('http://')||d.startsWith('https://')){body=ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(d,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Padding(padding:EdgeInsets.all(12),child:Text('Image preview unavailable'))));}else{final b64=d.split(',').last;body=ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.memory(base64Decode(b64),fit:BoxFit.contain));}}catch(_){body=const Text('Image preview unavailable');}}else if(content.startsWith('[[VIDEO]]')){final url=content.substring(9);body=Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('✅ Video ready'),const SizedBox(height:6),SelectableText(url)]);}else{body=SelectableText(content,style:TextStyle(color:user?Colors.white:Colors.black87,height:1.45));}return Align(alignment:user?Alignment.centerRight:Alignment.centerLeft,child:Container(margin:const EdgeInsets.only(bottom:14),constraints:const BoxConstraints(maxWidth:620),padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:user?Colors.black:Colors.white,border:user?null:Border.all(color:Colors.blue.shade100),borderRadius:BorderRadius.circular(18)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[body,if(!user&&!content.startsWith('[[IMAGE]]')&&!content.startsWith('[[VIDEO]]'))Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>speak(content),icon:const Icon(Icons.volume_up,size:18)),IconButton(onPressed:tts.stop,icon:const Icon(Icons.stop,size:18))])])));}
+ Widget _bubble(Map<String,String> m){final user=m['role']=='user';final content=m['content']??'';Widget body;if(content.startsWith('[[IMAGE]]')){final d=content.substring(9);try{if(d.startsWith('http://')||d.startsWith('https://')){body=ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.network(d,fit:BoxFit.contain,errorBuilder:(_,__,___)=>const Padding(padding:EdgeInsets.all(12),child:Text('Image preview unavailable'))));}else{final b64=d.split(',').last;body=ClipRRect(borderRadius:BorderRadius.circular(12),child:Image.memory(base64Decode(b64),fit:BoxFit.contain));}}catch(_){body=const Text('Image preview unavailable');}}else if(content.startsWith('[[VIDEO]]')){final url=content.substring(9);body=_VideoBubble(url:url);}else{body=SelectableText(content,style:TextStyle(color:user?Colors.white:Colors.black87,height:1.45));}return Align(alignment:user?Alignment.centerRight:Alignment.centerLeft,child:Container(margin:const EdgeInsets.only(bottom:14),constraints:const BoxConstraints(maxWidth:620),padding:const EdgeInsets.all(14),decoration:BoxDecoration(color:user?Colors.black:Colors.white,border:user?null:Border.all(color:Colors.blue.shade100),borderRadius:BorderRadius.circular(18)),child:Column(crossAxisAlignment:CrossAxisAlignment.start,children:[body,if(!user&&!content.startsWith('[[IMAGE]]')&&!content.startsWith('[[VIDEO]]'))Row(mainAxisSize:MainAxisSize.min,children:[IconButton(onPressed:()=>speak(content),icon:const Icon(Icons.volume_up,size:18)),IconButton(onPressed:tts.stop,icon:const Icon(Icons.stop,size:18))])])));}
+ class _VideoBubble extends StatefulWidget{final String url;const _VideoBubble({required this.url});@override State<_VideoBubble> createState()=>_VideoBubbleState();}
+ class _VideoBubbleState extends State<_VideoBubble>{VideoPlayerController? c;@override void initState(){super.initState();_load();}Future<void> _load()async{final p=await SharedPreferences.getInstance();final token=p.getString('token')??'';final x=VideoPlayerController.networkUrl(Uri.parse(widget.url),httpHeaders:{if(token.isNotEmpty)'Authorization':'Bearer $token'});c=x;try{await x.initialize();if(mounted)setState((){});}catch(_){if(mounted)setState((){});}}@override void dispose(){c?.dispose();super.dispose();}@override Widget build(BuildContext context){final x=c;if(x==null)return const Padding(padding:EdgeInsets.all(12),child:Text('Preparing video…'));if(!x.value.isInitialized)return const Padding(padding:EdgeInsets.all(12),child:Text('Video could not be loaded'));return Column(crossAxisAlignment:CrossAxisAlignment.start,children:[const Text('✅ Video ready'),const SizedBox(height:8),AspectRatio(aspectRatio:x.value.aspectRatio,child:VideoPlayer(x)),Row(children:[IconButton(onPressed:(){setState((){x.value.isPlaying?x.pause():x.play();});},icon:Icon(x.value.isPlaying?Icons.pause:Icons.play_arrow)),Expanded(child:VideoProgressIndicator(x,allowScrubbing:true))])]);}}
  Widget _composer()=>SafeArea(top:false,child:Container(color:Colors.white,padding:const EdgeInsets.all(12),child:Container(decoration:BoxDecoration(border:Border.all(color:Colors.blue,width:2),borderRadius:BorderRadius.circular(24)),padding:const EdgeInsets.symmetric(horizontal:4,vertical:3),child:Row(crossAxisAlignment:CrossAxisAlignment.center,children:[IconButton(tooltip:'Attach file',onPressed:busy?null:pickAttachment,icon:Icon(attachmentName==null?Icons.add_circle_outline:Icons.attach_file,color:attachmentName==null?Colors.green:Colors.blue)),Expanded(child:TextField(controller:input,minLines:1,maxLines:5,decoration:InputDecoration(hintText:attachmentName==null?'Message ✨ Khobragade AI…':'📎 $attachmentName — add a message',border:InputBorder.none))),IconButton(tooltip:'Voice typing',onPressed:()=>mic(false),icon:Icon(listening?Icons.mic:Icons.mic_none,color:listening?Colors.red:Colors.black87,size:27)),GestureDetector(onTap:busy?null:openVoiceConversation,child:AnimatedContainer(duration:const Duration(milliseconds:180),width:48,height:48,decoration:BoxDecoration(shape:BoxShape.circle,gradient:LinearGradient(colors:voiceMode?const[Color(0xff16a34a),Color(0xff2563eb),Color(0xffec4899)]:const[Color(0xff2563eb),Color(0xff60a5fa)]),boxShadow:[BoxShadow(color:Colors.blue.withValues(alpha:.28),blurRadius:12,offset:const Offset(0,4))]),child:const Icon(Icons.graphic_eq_rounded,color:Colors.white,size:30))),const SizedBox(width:5),IconButton(onPressed:busy?null:()=>send(),icon:const CircleAvatar(backgroundColor:Colors.red,child:Icon(Icons.arrow_upward,color:Colors.white))) ]))));
 }
 

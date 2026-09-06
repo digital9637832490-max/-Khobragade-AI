@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { pool } from '../db.js';
+import { pool, tx } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { textProvider } from '../ai/providers.js';
 export const userRouter=Router();
@@ -26,6 +26,12 @@ userRouter.get('/location/reverse', async(req,res,next)=>{
   }catch(e){next(e)}
 });
 
+userRouter.get('/app/update', async(_req,res)=>{
+  const build=Number(process.env.APP_LATEST_BUILD||0);
+  const version=String(process.env.APP_LATEST_VERSION||'');
+  const apkUrl=String(process.env.APP_APK_URL||'https://github.com/digital9637832490-max/-Khobragade-AI/releases/latest');
+  res.json({latestBuild:build,latestVersion:version,apkUrl});
+});
 userRouter.post('/projects', async(req,res,next)=>{
   try{
     const b=z.object({name:z.string().min(1),type:z.string().min(1),input:z.record(z.any()).default({})}).parse(req.body);
@@ -38,15 +44,14 @@ userRouter.get('/projects', async(req,res,next)=>{
 });
 
 async function createAiJob(userId:string, toolKey:string, input:any){
-  const s=await pool.query('SELECT value FROM settings WHERE key=$1',[`tool.${toolKey}`]);
-  const cfg=s.rows[0]?.value || {enabled:true,dailyLimit:0,maintenance:false};
-  if(!cfg.enabled || cfg.maintenance) throw new Error('Tool unavailable');
-  if(toolKey!=='chat' && Number(cfg.dailyLimit||0)>0){
-    const used=await pool.query(`SELECT count(*) FROM ai_jobs WHERE user_id=$1 AND tool_key=$2 AND created_at >= date_trunc('day', now())`,[userId,toolKey]);
-    if(Number(used.rows[0].count||0)>=Number(cfg.dailyLimit)) throw new Error('Daily safety limit reached');
-  }
-  const j=await pool.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,0,$3) RETURNING *`,[userId,toolKey,input]);
-  return j.rows[0];
+  return tx(async c=>{
+    const s=await c.query('SELECT value FROM settings WHERE key=$1',[`tool.${toolKey}`]);
+    const cfg=s.rows[0]?.value || {enabled:true,maintenance:false};
+    if(!cfg.enabled || cfg.maintenance) throw new Error('Tool unavailable');
+    // All AI tools are free in the current Khobragade AI app.
+    const j=await c.query(`INSERT INTO ai_jobs(user_id,tool_key,coin_cost,input) VALUES($1,$2,0,$3) RETURNING *`,[userId,toolKey,input]);
+    return j.rows[0];
+  });
 }
 userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
   const b=z.object({
@@ -63,7 +68,7 @@ userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
   const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,language:b.language,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude});
   res.json(result);
 }catch(e){next(e)}});
-userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),language:z.enum(['en','hi','mr']).default('hi'),localDateTime:z.string().max(120).optional(),timeZone:z.string().max(120).optional(),locationName:z.string().max(255).optional(),latitude:z.number().min(-90).max(90).optional(),longitude:z.number().min(-180).max(180).optional(),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,language:b.language,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
+userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),language:z.enum(['en','hi','mr']).default('hi'),localDateTime:z.string().max(120).optional(),timeZone:z.string().max(120).optional(),locationName:z.string().max(255).optional(),latitude:z.number().min(-90).max(90).optional(),longitude:z.number().min(-180).max(180).optional(),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,language:b.language,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData});res.json(result);}catch(e){next(e)}});
 userRouter.post('/ai/thumbnail', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'thumbnail',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/photo', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'photo',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/content', async(req,res,next)=>{try{
@@ -77,14 +82,13 @@ userRouter.get('/ai/video/:id/file', async(req,res,next)=>{
   try{
     const q=await pool.query('SELECT result FROM ai_jobs WHERE id=$1 AND user_id=$2 AND tool_key=$3 AND status=$4',[req.params.id,req.auth!.id,'video','completed']);
     if(!q.rowCount) return res.status(404).json({error:'Generated video not found'});
-    const result=q.rows[0]?.result||{};
-    const dataUrl=String(result.videoDataUrl||'');
-    if(dataUrl.startsWith('data:video/')){const comma=dataUrl.indexOf(',');if(comma>0){const mime=dataUrl.slice(5,dataUrl.indexOf(';',5)>0?dataUrl.indexOf(';',5):comma);const buf=Buffer.from(dataUrl.slice(comma+1),'base64');res.setHeader('Content-Type',mime||'video/mp4');res.setHeader('Content-Length',String(buf.length));res.setHeader('Cache-Control','private, max-age=300');return res.end(buf);}}
+    const result:any=q.rows[0]?.result||{};
     const uri=String(result.videoUri||result.videoUrl||'');
     if(!uri) return res.status(404).json({error:'Video file is not available'});
-    const apiKey=process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
-    if(!apiKey) return res.status(500).json({error:'Gemini API key missing'});
-    const r=await fetch(uri,{headers:{'x-goog-api-key':apiKey}});
+    const isPollinations=String(result.provider||'')==='pollinations';
+    const apiKey=isPollinations?(process.env.POLLINATIONS_API_KEY||''):(process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '');
+    if(!apiKey) return res.status(500).json({error:isPollinations?'Pollinations API key missing':'Gemini API key missing'});
+    const r=await fetch(uri,{headers:{Authorization:isPollinations?`Bearer ${apiKey}`:undefined,'x-goog-api-key':isPollinations?undefined:apiKey} as any});
     if(!r.ok) return res.status(r.status).json({error:'Generated video could not be downloaded'});
     res.setHeader('Content-Type',r.headers.get('content-type')||'video/mp4');
     res.setHeader('Cache-Control','private, max-age=300');

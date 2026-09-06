@@ -1,8 +1,6 @@
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 CREATE TYPE user_status AS ENUM ('active','blocked');
-CREATE TYPE payment_status AS ENUM ('pending','approved','rejected');
-CREATE TYPE ledger_type AS ENUM ('credit','debit');
 CREATE TYPE job_status AS ENUM ('pending','processing','completed','failed');
 CREATE TYPE ticket_status AS ENUM ('open','closed');
 
@@ -11,7 +9,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   email TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
-  coin_balance BIGINT NOT NULL DEFAULT 0 CHECK (coin_balance >= 0), -- LEGACY: no longer used by application flow
+  coin_balance BIGINT NOT NULL DEFAULT 0 CHECK (coin_balance >= 0),
   status user_status NOT NULL DEFAULT 'active',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
@@ -24,48 +22,6 @@ CREATE TABLE IF NOT EXISTS admins (
   role TEXT NOT NULL DEFAULT 'admin',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
-
-CREATE TABLE IF NOT EXISTS coin_packages (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name TEXT NOT NULL,
-  coins BIGINT NOT NULL CHECK (coins > 0),
-  bonus_coins BIGINT NOT NULL DEFAULT 0 CHECK (bonus_coins >= 0),
-  price_inr NUMERIC(12,2) NOT NULL CHECK (price_inr >= 0),
-  is_active BOOLEAN NOT NULL DEFAULT TRUE,
-  sort_order INT NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE TABLE IF NOT EXISTS wallet_transactions (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  type ledger_type NOT NULL,
-  coins BIGINT NOT NULL CHECK (coins > 0),
-  balance_after BIGINT NOT NULL CHECK (balance_after >= 0),
-  source TEXT NOT NULL,
-  reference_id UUID,
-  reason TEXT,
-  admin_id UUID REFERENCES admins(id),
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS idx_wallet_user_created ON wallet_transactions(user_id, created_at DESC);
-
-CREATE TABLE IF NOT EXISTS payment_requests (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  package_id UUID NOT NULL REFERENCES coin_packages(id),
-  amount_inr NUMERIC(12,2) NOT NULL,
-  transaction_id TEXT NOT NULL,
-  proof_file_key TEXT,
-  status payment_status NOT NULL DEFAULT 'pending',
-  reviewed_by UUID REFERENCES admins(id),
-  reviewed_at TIMESTAMPTZ,
-  rejection_reason TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE(user_id, transaction_id)
-);
-CREATE INDEX IF NOT EXISTS idx_payment_status_created ON payment_requests(status, created_at DESC);
 
 CREATE TABLE IF NOT EXISTS projects (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -84,7 +40,7 @@ CREATE TABLE IF NOT EXISTS ai_jobs (
   project_id UUID REFERENCES projects(id) ON DELETE SET NULL,
   tool_key TEXT NOT NULL,
   status job_status NOT NULL DEFAULT 'pending',
-  coin_cost BIGINT NOT NULL DEFAULT 0 CHECK (coin_cost >= 0), -- LEGACY: always written as 0
+  coin_cost BIGINT NOT NULL DEFAULT 0 CHECK (coin_cost >= 0),
   input JSONB NOT NULL DEFAULT '{}'::jsonb,
   result JSONB NOT NULL DEFAULT '{}'::jsonb,
   error_message TEXT,
