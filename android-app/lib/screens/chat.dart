@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import 'package:flutter_tts/flutter_tts.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:geolocator/geolocator.dart';
@@ -12,7 +13,7 @@ import '../live_voice.dart';
 import '../services/app_update_service.dart';
 class ChatScreen extends StatefulWidget{final Future<void> Function()? onLogout;const ChatScreen({super.key,this.onLogout});@override State<ChatScreen> createState()=>_ChatScreenState();}
 class _ChatScreenState extends State<ChatScreen>{
- final api=Api(),input=TextEditingController(),scroll=ScrollController(),speech=stt.SpeechToText(),tts=FlutterTts(),imagePicker=ImagePicker();final voicePhase=ValueNotifier<String>('ready'),voiceWords=ValueNotifier<String>('');LiveVoiceSession? liveVoice;String lastVoiceText='';bool voiceSending=false;List<Map<String,String>> messages=[];List<Map<String,dynamic>> chatSessions=[];String currentChatId='';bool busy=false,listening=false,voiceMode=false,voiceRestarting=false;String voiceGender='female';String voiceName='';String language='hi';List<Map<String,dynamic>> availableVoices=[];String? attachmentName,attachmentMime,attachmentData;Map<String,dynamic>? maintenance;DateTime? quotaUntil;String quotaKind='';Timer? clock;
+ final api=Api(),deviceChannel=const MethodChannel('com.niteshkhobragade.creator_studio/device'),input=TextEditingController(),scroll=ScrollController(),speech=stt.SpeechToText(),tts=FlutterTts(),imagePicker=ImagePicker();final voicePhase=ValueNotifier<String>('ready'),voiceWords=ValueNotifier<String>('');LiveVoiceSession? liveVoice;String lastVoiceText='';bool voiceSending=false;List<Map<String,String>> messages=[];List<Map<String,dynamic>> chatSessions=[];String currentChatId='';bool busy=false,listening=false,voiceMode=false,voiceRestarting=false;String voiceGender='female';String voiceName='';String language='hi';List<Map<String,dynamic>> availableVoices=[];String? attachmentName,attachmentMime,attachmentData;Map<String,dynamic>? maintenance;DateTime? quotaUntil;String quotaKind='';Timer? clock;
  @override void initState(){super.initState();clock=Timer.periodic(const Duration(seconds:1),(_){if(mounted&&(quotaUntil!=null||maintenance?['appActive']==true))setState((){});});load();}
  @override void dispose(){clock?.cancel();liveVoice?.dispose();speech.stop();tts.stop();voicePhase.dispose();voiceWords.dispose();input.dispose();scroll.dispose();super.dispose();}
  Future<void> load()async{
@@ -169,27 +170,41 @@ class _ChatScreenState extends State<ChatScreen>{
 }catch(_){}await tts.speak(clean);if(continueVoice&&voiceMode&&mounted){await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted){voiceRestarting=true;voicePhase.value='listening';await mic(true,0);voiceRestarting=false;}}else if(voiceMode){voicePhase.value='ready';}}
  Future<Map<String,dynamic>> _clientContext()async{
   final now=DateTime.now();
-  final tz='${now.timeZoneName} (UTC${now.timeZoneOffset.inMinutes>=0?'+':''}${(now.timeZoneOffset.inMinutes/60).toStringAsFixed(2)})';
-  final out=<String,dynamic>{'localDateTime':now.toIso8601String(),'timeZone':tz};
+  String tz='Asia/Kolkata';
   try{
-    final live=await api.request('/time?timeZone=${Uri.encodeQueryComponent(now.timeZoneName.isEmpty?'Asia/Kolkata':now.timeZoneName)}');
+    final nativeTz=await deviceChannel.invokeMethod<String>('getTimeZone');
+    if(nativeTz!=null && nativeTz.trim().isNotEmpty) tz=nativeTz.trim();
+  }catch(_){ }
+  final offset=now.timeZoneOffset;
+  final out=<String,dynamic>{'localDateTime':now.toIso8601String(),'timeZone':tz,'utcOffsetMinutes':offset.inMinutes,'utcOffset':offset.inMinutes/60};
+  try{
+    final live=await api.request('/time?timeZone=${Uri.encodeQueryComponent(tz)}');
     if('${live['localDateTime']??''}'.isNotEmpty) out['localDateTime']=live['localDateTime'];
-    out['serverIso']=live['iso'];
-  }catch(_){}
+    if('${live['iso']??''}'.isNotEmpty) out['serverIso']=live['iso'];
+    if('${live['timeZone']??''}'.isNotEmpty) out['timeZone']=live['timeZone'];
+  }catch(_){ }
   try{
     final enabled=await Geolocator.isLocationServiceEnabled();
     var permission=await Geolocator.checkPermission();
     if(permission==LocationPermission.denied) permission=await Geolocator.requestPermission();
     if(enabled && permission!=LocationPermission.denied && permission!=LocationPermission.deniedForever){
-      final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high,timeLimit:Duration(seconds:8)));
+      final pos=await Geolocator.getCurrentPosition(locationSettings:const LocationSettings(accuracy:LocationAccuracy.high,timeLimit:Duration(seconds:12)));
       out['latitude']=pos.latitude;out['longitude']=pos.longitude;
+      var resolved=false;
       try{
         final loc=await api.request('/location/reverse?lat=${pos.latitude}&lon=${pos.longitude}');
         final city=(loc['city']??'').toString(); final state=(loc['state']??'').toString(); final country=(loc['country']??'').toString();
         final label=[city,state,country].where((x)=>x.isNotEmpty).join(', ');
-        if(label.isNotEmpty) out['locationName']=label;
-        else out['locationName']='GPS ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
-      }catch(_){ out['locationName']='GPS ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}'; }
+        if(label.isNotEmpty){out['locationName']=label;resolved=true;}
+      }catch(_){}
+      if(!resolved){
+        try{
+          final native=await deviceChannel.invokeMethod<Map<dynamic,dynamic>>('reverseGeocode',{'latitude':pos.latitude,'longitude':pos.longitude});
+          final formatted=(native?['formatted']??'').toString().trim();
+          if(formatted.isNotEmpty){out['locationName']=formatted;resolved=true;}
+        }catch(_){}
+      }
+      if(!resolved) out['locationName']='GPS ${pos.latitude.toStringAsFixed(5)}, ${pos.longitude.toStringAsFixed(5)}';
     }
   }catch(_){ }
   return out;

@@ -34,7 +34,7 @@ class MainActivity : FlutterActivity() {
                     } else {
                         try {
                             @Suppress("DEPRECATION")
-                            val geocoder = Geocoder(this, Locale.getDefault())
+                            val geocoder = Geocoder(this, Locale.ENGLISH)
                             @Suppress("DEPRECATION")
                             val addresses: List<Address> = geocoder.getFromLocation(lat, lon, 1) ?: emptyList()
                             val a = addresses.firstOrNull()

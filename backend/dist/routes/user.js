@@ -8,17 +8,19 @@ export const userRouter = Router();
 userRouter.use(requireAuth);
 userRouter.get('/time', async (req, res, next) => {
     try {
-        const tz = String(req.query.timeZone || 'Asia/Kolkata');
-        let date = new Date();
+        const requested = String(req.query.timeZone || 'Asia/Kolkata').trim() || 'Asia/Kolkata';
+        const date = new Date();
+        let timeZone = requested;
         let parts = [];
         try {
-            parts = new Intl.DateTimeFormat('en-IN', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+            parts = new Intl.DateTimeFormat('en-IN', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
         }
         catch {
-            parts = new Intl.DateTimeFormat('en-IN', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+            timeZone = 'Asia/Kolkata';
+            parts = new Intl.DateTimeFormat('en-IN', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
         }
         const get = (type) => parts.find(p => p.type === type)?.value || '';
-        res.json({ iso: date.toISOString(), timeZone: tz, localDateTime: `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}` });
+        res.json({ iso: date.toISOString(), timeZone, localDateTime: `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}` });
     }
     catch (e) {
         next(e);
