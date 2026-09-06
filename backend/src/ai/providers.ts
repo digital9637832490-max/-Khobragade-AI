@@ -260,7 +260,7 @@ ${history.map((m: any) => `${m.role}: ${String(m.content || '').slice(0, 12000)}
 User: ${userMessage}
 Assistant:` : `You are a professional YouTube SEO expert. User request/topic: "${topic}". Generate useful YouTube content in the SAME LANGUAGE as the user's request. Return ONLY valid JSON: {"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}. No markdown or code fences.`;
 
-    const tools = isChat && searchRequested ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ googleMaps: {} }] : [])] : undefined;
+    const tools = isChat && searchRequested ? [{ google_search: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ google_maps: { latitude, longitude } }] : [])] : undefined;
     let primaryError: any = null;
     if (apiKey) {
       for (const model of chatModels) {
