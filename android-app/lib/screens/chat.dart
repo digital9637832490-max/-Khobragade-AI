@@ -10,7 +10,8 @@ import 'package:geolocator/geolocator.dart';
 import '../api.dart';
 import '../live_voice.dart';
 import '../services/app_update_service.dart';
-class ChatScreen extends StatefulWidget{final Future<void> Function() onLogout;const ChatScreen({super.key,required this.onLogout});@override State<ChatScreen> createState()=>_ChatScreenState();}
+import 'package:share_plus/share_plus.dart';
+class ChatScreen extends StatefulWidget{final Future<void> Function()? onLogout;const ChatScreen({super.key,this.onLogout});@override State<ChatScreen> createState()=>_ChatScreenState();}
 class _ChatScreenState extends State<ChatScreen>{
  final api=Api(),input=TextEditingController(),scroll=ScrollController(),speech=stt.SpeechToText(),tts=FlutterTts(),imagePicker=ImagePicker();final voicePhase=ValueNotifier<String>('ready'),voiceWords=ValueNotifier<String>('');LiveVoiceSession? liveVoice;String lastVoiceText='';bool voiceSending=false;List<Map<String,String>> messages=[];List<Map<String,dynamic>> chatSessions=[];String currentChatId='';bool busy=false,listening=false,voiceMode=false,voiceRestarting=false;String voiceGender='female';String voiceName='';String language='hi';List<Map<String,dynamic>> availableVoices=[];String? attachmentName,attachmentMime,attachmentData;Map<String,dynamic>? maintenance;DateTime? quotaUntil;String quotaKind='';Timer? clock;
  @override void initState(){super.initState();clock=Timer.periodic(const Duration(seconds:1),(_){if(mounted&&(quotaUntil!=null||maintenance?['appActive']==true))setState((){});});load();}
@@ -140,11 +141,12 @@ class _ChatScreenState extends State<ChatScreen>{
    ),
   );
  }
- Future<Map<String,dynamic>> waitJob(String id,{bool video=false})async{final max=video?360:180;final delay=video?const Duration(milliseconds:2500):const Duration(milliseconds:650);for(var i=0;i<max;i++){await Future.delayed(delay);final j=await api.request('/jobs/$id');if(j['status']=='completed')return Map<String,dynamic>.from(j['result']??{});if(j['status']=='failed')throw Exception(j['error_message']??'Generation failed');}throw Exception(video?'Video is still processing. Please try again shortly.':'Response is taking too long');}
+ Future<Map<String,dynamic>> waitJob(String id,{bool video=false})async{final max=video?360:120;final delay=video?const Duration(milliseconds:2500):const Duration(milliseconds:250);for(var i=0;i<max;i++){await Future.delayed(delay);final j=await api.request('/jobs/$id');if(j['status']=='completed')return Map<String,dynamic>.from(j['result']??{});if(j['status']=='failed')throw Exception(j['error_message']??'Generation failed');}throw Exception(video?'Video is still processing. Please try again shortly.':'Response is taking too long');}
  bool wantsImage(String t){final x=t.toLowerCase().replaceAll(RegExp(r'\s+'),' ').trim();final hasImage=RegExp(r'image|photo|picture|thumbnail|poster|logo|banner|tasveer|tasvir|pic|तस्वीर|इमेज|फोटो|चित्र|पोस्टर|लोगो|बैनर').hasMatch(x);final hasMake=RegExp(r'bana|banao|banado|bana do|banakar|banana|generate|create|make|draw|design|बना|बनाओ|बना दो|बनाकर|बनाना|जनरेट|क्रिएट|डिजाइन|डिज़ाइन').hasMatch(x);return hasImage&&hasMake;}
  bool wantsVideo(String t){final x=t.toLowerCase().replaceAll(RegExp(r'\s+'),' ').trim();final hasVideo=RegExp(r'video|reel|shorts|clip|वीडियो|रील|शॉर्ट|शॉर्ट्स|क्लिप').hasMatch(x);final hasMake=RegExp(r'bana|banao|banado|bana do|banakar|banana|generate|create|make|animate|बना|बनाओ|बना दो|बनाकर|बनाना|जनरेट|क्रिएट').hasMatch(x);return hasVideo&&hasMake;}
  String imagePrompt(String t)=>t.replaceAll(RegExp(r'(?i)^(demo\s*)?(image|photo|picture|tasveer|tasvir|तस्वीर|इमेज|फोटो|चित्र)\s*(generate|create|bana|banao|banado|जनरेट|क्रिएट|बना|बनाओ|बना दो)?\s*'), '').trim().isEmpty?t:t;
- Future<void> speak(String text,{bool continueVoice=false})async{voicePhase.value='speaking';await tts.stop();await tts.awaitSpeakCompletion(true);await tts.setLanguage(language=='mr'?'mr-IN':language=='hi'?'hi-IN':'en-IN');await tts.setSpeechRate(.48);final voices=await tts.getVoices;try{
+ String _ttsText(String text){var s=text; s=s.replaceAll(RegExp(r'```[\s\S]*?```'), ' '); s=s.replaceAll(RegExp(r'`([^`]*)`'), r'\1'); s=s.replaceAll(RegExp(r'https?://\S+'), ' '); s=s.replaceAll(RegExp(r'[*_#~>]+'), ' '); s=s.replaceAll(RegExp(r'[😀-🙏🌀-🫿☀-⛿✈-⛹️‍♀️✂-➿]+'), ' '); s=s.replaceAll(RegExp(r'[\[\]{}<>|\\]+'), ' '); s=s.replaceAll(RegExp(r'\s+'), ' ').trim(); return s;}
+ Future<void> speak(String text,{bool continueVoice=false})async{final clean=_ttsText(text);if(clean.isEmpty)return;voicePhase.value='speaking';await tts.stop();await tts.awaitSpeakCompletion(true);await tts.setLanguage(language=='mr'?'mr-IN':language=='hi'?'hi-IN':'en-IN');await tts.setSpeechRate(.48);final voices=await tts.getVoices;try{
   final list=List<Map>.from(voices as List);
   availableVoices=List<Map<String,dynamic>>.from(list.map((v)=>Map<String,dynamic>.from(v)));
   Map<String,dynamic>? chosen;
@@ -165,7 +167,7 @@ class _ChatScreenState extends State<ChatScreen>{
     }
   }
   if(chosen!=null){voiceName='${chosen['name']}';await tts.setVoice({'name':'${chosen['name']}','locale':'${chosen['locale']}'});}
-}catch(_){}await tts.speak(text);if(continueVoice&&voiceMode&&mounted){await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted){voiceRestarting=true;voicePhase.value='listening';await mic(true,0);voiceRestarting=false;}}else if(voiceMode){voicePhase.value='ready';}}
+}catch(_){}await tts.speak(clean);if(continueVoice&&voiceMode&&mounted){await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted){voiceRestarting=true;voicePhase.value='listening';await mic(true,0);voiceRestarting=false;}}else if(voiceMode){voicePhase.value='ready';}}
  Future<Map<String,dynamic>> _clientContext()async{
   final now=DateTime.now();
   final out=<String,dynamic>{'localDateTime':now.toIso8601String(),'timeZone': '${now.timeZoneName} (UTC${now.timeZoneOffset.inMinutes>=0?'+':''}${(now.timeZoneOffset.inMinutes/60).toStringAsFixed(2)})'};
@@ -186,195 +188,9 @@ class _ChatScreenState extends State<ChatScreen>{
   }catch(_){ }
   return out;
  }
- Future<List<Map<String,String>>> _apiHistory() async {
-  final source = messages.length > 20 ? messages.sublist(messages.length - 20) : messages;
-  return source.map((m) {
-    var content = (m['content'] ?? '').toString();
-    // Never send generated binary data back inside chat history.
-    if (content.startsWith('[[IMAGE]]')) content = '[Previous image generated]';
-    if (content.startsWith('[[VIDEO]]')) content = '[Previous video generated]';
-    if (content.length > 6000) content = content.substring(0, 6000);
-    return <String,String>{'role': m['role'] ?? 'user', 'content': content};
-  }).toList();
- }
- bool _needsLocationContext(String text) => RegExp(r'\b(where am i|my location|current location|near me|nearby|location|weather|mausam|मौसम|कहाँ हूँ|कहां हूँ|लोकेशन|मेरे पास|जवळ|स्थान)\b', caseSensitive:false).hasMatch(text);
-
- Future<void> send([String? value, bool speakReply = false]) async {
-  final text = (value ?? input.text).trim();
-  if ((text.isEmpty && attachmentData == null) || busy) return;
-  final sentText = text.isEmpty ? 'Attached file: ${attachmentName ?? 'file'}' : text;
-  FocusScope.of(context).unfocus();
-  setState(() {
-    messages.add({'role':'user','content': attachmentName == null ? sentText : '$sentText\n📎 $attachmentName'});
-    input.clear();
-    busy = true;
-  });
-  await save();
-  try {
-    Map<String,dynamic> job;
-    String spoken = '';
-    if (wantsVideo(sentText)) {
-      voicePhase.value = 'thinking';
-      final ctx = _needsLocationContext(sentText) ? await _clientContext() : <String,dynamic>{};
-      String? previousImage;
-      for (final m in messages.reversed) {
-        final c = m['content'] ?? '';
-        if (m['role'] == 'assistant' && c.startsWith('[[IMAGE]]')) {
-          previousImage = c.substring(9);
-          break;
-        }
-      }
-      job = await api.request('/ai/video', method:'POST', body:{'prompt':sentText, if(previousImage != null) 'imageDataUrl':previousImage, ...ctx});
-      final r = await waitJob(job['id'].toString(), video:true);
-      final uri = (r['videoUri'] ?? r['videoUrl'] ?? '').toString();
-      final answer = uri.isEmpty ? '✅ Video generate ho gaya.' : '[[VIDEO]]$uri';
-      if (mounted) setState(() => messages.add({'role':'assistant','content':answer}));
-      spoken = 'वीडियो तैयार हो गया है।';
-    } else if (wantsImage(sentText)) {
-      voicePhase.value = 'thinking';
-      job = await api.request('/ai/photo', method:'POST', body:{'prompt':sentText});
-      final r = await waitJob(job['id'].toString());
-      final img = (r['imageDataUrl'] ?? r['imageUrl'] ?? '').toString();
-      if (img.isEmpty) throw Exception('Image generated but image data missing');
-      if (mounted) setState(() => messages.add({'role':'assistant','content':'[[IMAGE]]$img'}));
-      spoken = 'इमेज तैयार हो गई है।';
-    } else {
-      voicePhase.value = 'thinking';
-      final history = await _apiHistory();
-      final ctx = _needsLocationContext(sentText) ? await _clientContext() : <String,dynamic>{};
-      final r = await api.request('/ai/chat', method:'POST', body:{
-        'message': sentText,
-        'history': history,
-        'voiceGender': voiceGender,
-        'language': language,
-        ...ctx,
-        if(attachmentData != null) 'attachmentName': attachmentName,
-        if(attachmentData != null) 'attachmentMime': attachmentMime,
-        if(attachmentData != null) 'attachmentData': attachmentData,
-      });
-      final answer = (r['answer'] ?? r['description'] ?? '').toString().trim();
-      if (answer.isEmpty) throw Exception('AI returned an empty response. Please try again.');
-      if (mounted) setState(() => messages.add({'role':'assistant','content':answer}));
-      spoken = answer;
-    }
-    if ((speakReply || voiceMode) && spoken.isNotEmpty) await speak(spoken, continueVoice:false);
-    if (mounted) setState(() { attachmentName=null; attachmentMime=null; attachmentData=null; });
-  } catch(e) {
-    final raw = e.toString().replaceFirst('Exception: ','');
-    String msg = '⚠️ $raw';
-    if(raw.contains('ALL_IMAGE_PROVIDERS_EXHAUSTED')) msg='⚠️ Image generation service अभी उपलब्ध नहीं है।';
-    else if(raw.contains('IMAGE_PROVIDER_BILLING_REQUIRED')) msg='⚠️ Image generation provider access/billing चाहिए।';
-    else if(raw.contains('ALL_AI_PROVIDERS_EXHAUSTED')) msg='⚠️ AI service अभी उपलब्ध नहीं है। कृपया फिर कोशिश करें।';
-    else if(raw.contains('GEMINI_DAILY_QUOTA')) { quotaKind='daily'; quotaUntil=DateTime.now().add(const Duration(hours:24)); msg='आज की AI उपयोग सीमा पूरी हो गई है।'; }
-    else if(raw.contains('VIDEO_PROVIDER_BILLING_REQUIRED')) msg='⚠️ Video generation के लिए provider access/billing चाहिए।';
-    else if(raw.contains('GEMINI_RATE_LIMIT') || raw.contains('429')) { quotaKind='minute'; quotaUntil=DateTime.now().add(const Duration(minutes:1)); msg='⚠️ अभी बहुत requests हैं। थोड़ी देर बाद फिर कोशिश करें।'; }
-    if (mounted) setState(() => messages.add({'role':'assistant','content':msg}));
-  } finally {
-    busy = false;
-    await save();
-    if (mounted) setState((){});
-    _scrollBottom();
-  }
- }
-
- Future<void> _submitVoiceWords() async {
-  if (voiceSending || busy || !voiceMode) return;
-  final said = lastVoiceText.trim();
-  if (said.isEmpty) return;
-  voiceSending = true;
-  lastVoiceText = '';
-  await speech.stop();
-  if (mounted) setState(() => listening=false);
-  voicePhase.value = 'thinking';
-  try {
-    await send(said, true);
-  } finally {
-    voiceSending = false;
-    if (voiceMode && mounted && !busy && !voiceRestarting) {
-      voiceRestarting = true;
-      try {
-        await Future.delayed(const Duration(milliseconds:250));
-        if (voiceMode && mounted && !busy && !voiceSending) await mic(true,0);
-      } finally { voiceRestarting=false; }
-    }
-  }
- }
-
- Future<void> mic([bool autoSend=false, int retry=0]) async {
-  if (busy || voiceSending) return;
-  if (listening) {
-    await speech.stop();
-    if (mounted) setState(() => listening=false);
-    await Future.delayed(const Duration(milliseconds:120));
-  }
-  lastVoiceText='';
-  voiceWords.value='';
-  bool finalSubmitted=false;
-  final ok = await speech.initialize(
-    onStatus:(status){
-      final active=status=='listening';
-      if(active) voicePhase.value='listening';
-      if(mounted) setState(() => listening=active);
-      if(autoSend && voiceMode && (status=='done'||status=='notListening') && !busy && !voiceSending && !finalSubmitted) {
-        if(lastVoiceText.trim().isNotEmpty) {
-          finalSubmitted=true;
-          Future.microtask(_submitVoiceWords);
-        } else if(retry<2) {
-          Future.delayed(const Duration(milliseconds:350),(){if(voiceMode&&mounted&&!busy&&!voiceSending) mic(true,retry+1);});
-        }
-      }
-    },
-    onError:(e){
-      if(mounted) setState(() => listening=false);
-      voicePhase.value='error';
-      if(autoSend && voiceMode && !busy && !voiceSending && retry<2) {
-        Future.delayed(const Duration(milliseconds:500),(){if(voiceMode&&mounted&&!busy&&!voiceSending) mic(true,retry+1);});
-      }
-    },
-  );
-  if(!ok){
-    voicePhase.value='error';
-    if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission / speech service unavailable')));
-    return;
-  }
-  String? localeId;
-  try {
-    final locales=await speech.locales();
-    final wanted=language=='mr'?'mr':language=='en'?'en':'hi';
-    final hit=locales.where((l)=>l.localeId.toLowerCase().startsWith(wanted)).toList();
-    localeId=hit.isNotEmpty ? hit.first.localeId : (await speech.systemLocale())?.localeId;
-  } catch(_) {}
-  voicePhase.value='listening';
-  if(mounted) setState(()=>listening=true);
-  try {
-    await speech.listen(
-      listenOptions:stt.SpeechListenOptions(
-        localeId:localeId,
-        listenFor:const Duration(seconds:45),
-        pauseFor:const Duration(seconds:2),
-        partialResults:true,
-        listenMode:stt.ListenMode.dictation,
-        cancelOnError:false,
-      ),
-      onResult:(r){
-        final words=r.recognizedWords.trim();
-        if(words.isNotEmpty){
-          lastVoiceText=words;
-          voiceWords.value=words;
-          if(mounted) setState((){ input.text=words; input.selection=TextSelection.collapsed(offset:input.text.length); });
-        }
-        if(r.finalResult && autoSend && lastVoiceText.isNotEmpty && !finalSubmitted){
-          finalSubmitted=true;
-          Future.microtask(_submitVoiceWords);
-        }
-      },
-    );
-  } catch(e) {
-    voicePhase.value='error';
-    if(mounted) setState(()=>listening=false);
-    if(autoSend && voiceMode && retry<2) Future.delayed(const Duration(milliseconds:500),(){if(voiceMode&&mounted&&!busy&&!voiceSending)mic(true,retry+1);});
-  }
- }
+ Future<void> send([String? value,bool speakReply=false])async{final text=(value??input.text).trim();if((text.isEmpty&&attachmentData==null)||busy)return;final sentText=text.isEmpty?'Attached file: ${attachmentName??'file'}':text;setState((){messages.add({'role':'user','content':attachmentName==null?sentText:'$sentText\n📎 $attachmentName'});input.clear();busy=true;});await save();try{Map<String,dynamic> job;String spoken='';if(wantsVideo(sentText)){voicePhase.value='thinking';final ctx=await _clientContext();String? previousImage;for(final m in messages.reversed){final c=m['content']??'';if(m['role']=='assistant'&&c.startsWith('[[IMAGE]]')){previousImage=c.substring(9);break;}}job=await api.request('/ai/video',method:'POST',body:{'prompt':sentText,if(previousImage!=null)'imageDataUrl':previousImage,...ctx});final r=await waitJob(job['id'].toString(),video:true);final uri=(r['videoUri']??r['videoUrl']??'').toString();final answer=uri.isEmpty?'✅ Video generate ho gaya.':'[[VIDEO]]$uri';setState(()=>messages.add({'role':'assistant','content':answer}));spoken='वीडियो तैयार हो गया है।';}else if(wantsImage(sentText)){voicePhase.value='thinking';job=await api.request('/ai/photo',method:'POST',body:{'prompt':sentText});final r=await waitJob(job['id'].toString());final img=(r['imageDataUrl']??r['imageUrl']??'').toString();if(img.isEmpty)throw Exception('Image generated but image data missing');setState(()=>messages.add({'role':'assistant','content':'[[IMAGE]]$img'}));spoken='इमेज तैयार हो गई है।';}else{voicePhase.value='thinking';final history=messages.length>20?messages.sublist(messages.length-20):messages;final ctx=await _clientContext();job=await api.request('/ai/chat',method:'POST',body:{'message':sentText,'history':history,'voiceGender':voiceGender,'language':language,...ctx,if(attachmentData!=null)'attachmentName':attachmentName,if(attachmentData!=null)'attachmentMime':attachmentMime,if(attachmentData!=null)'attachmentData':attachmentData});final r=await waitJob(job['id'].toString());final answer=(r['answer']??r['description']??'').toString();setState(()=>messages.add({'role':'assistant','content':answer}));spoken=answer;}if((speakReply||voiceMode)&&spoken.isNotEmpty)await speak(spoken,continueVoice:false);if(mounted)setState((){attachmentName=null;attachmentMime=null;attachmentData=null;});}catch(e){final raw=e.toString().replaceFirst('Exception: ','');String msg='⚠️ $raw';if(raw.contains('ALL_IMAGE_PROVIDERS_EXHAUSTED'))msg='⚠️ अभी image generation की सभी configured AI services उपलब्ध नहीं हैं। कृपया थोड़ी देर बाद फिर कोशिश करें।';else if(raw.contains('IMAGE_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Image generation service के लिए provider access/billing चाहिए।';else if(raw.contains('ALL_AI_PROVIDERS_EXHAUSTED'))msg='⚠️ अभी सभी configured AI services उपलब्ध नहीं हैं। कृपया थोड़ी देर बाद फिर कोशिश करें।';else if(raw.contains('GEMINI_DAILY_QUOTA')){quotaKind='daily';quotaUntil=DateTime.now().add(const Duration(hours:24));msg='आज की AI उपयोग सीमा पूरी हो गई है। अगले quota reset के बाद फिर कोशिश करें।';}else if(raw.contains('VIDEO_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Video generation ke liye Google billing/model access chahiye.';else if(raw.contains('GEMINI_RATE_LIMIT')||raw.contains('429')){quotaKind='minute';quotaUntil=DateTime.now().add(const Duration(minutes:1));msg='अभी बहुत requests आ गई हैं। थोड़ी देर बाद फिर कोशिश करें।';}setState(()=>messages.add({'role':'assistant','content':msg}));}finally{busy=false;await save();if(mounted)setState((){});Future.delayed(const Duration(milliseconds:40),()=>scroll.hasClients?scroll.animateTo(scroll.position.maxScrollExtent,duration:const Duration(milliseconds:140),curve:Curves.easeOut):null);}}
+ Future<void> _submitVoiceWords()async{if(voiceSending||busy||!voiceMode)return;final said=lastVoiceText.trim();if(said.isEmpty)return;voiceSending=true;lastVoiceText='';await speech.stop();if(mounted)setState(()=>listening=false);voicePhase.value='thinking';try{await send(said,true);}finally{voiceSending=false;if(voiceMode&&mounted&&!busy&&!voiceRestarting){voiceRestarting=true;try{await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted&&!busy&&!voiceSending){voicePhase.value='listening';await mic(true,0);}}finally{voiceRestarting=false;}}}}
+ Future<void> mic([bool autoSend=false,int retry=0])async{if(busy||voiceSending)return;if(listening){await speech.stop();if(mounted)setState(()=>listening=false);await Future.delayed(const Duration(milliseconds:120));}lastVoiceText='';voiceWords.value='';final ok=await speech.initialize(onStatus:(status){final active=status=='listening';if(active)voicePhase.value='listening';if(mounted)setState(()=>listening=active);if(autoSend&&voiceMode&&(status=='done'||status=='notListening')&&!busy&&!voiceSending){if(lastVoiceText.trim().isNotEmpty){Future.microtask(_submitVoiceWords);}else if(retry<3){Future.delayed(const Duration(milliseconds:450),()=>mic(true,retry+1));}}},onError:(e){if(mounted)setState(()=>listening=false);voicePhase.value='error';if(autoSend&&voiceMode&&!busy&&!voiceSending&&retry<3){Future.delayed(const Duration(milliseconds:650),()=>mic(true,retry+1));}});if(!ok){voicePhase.value='error';if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission / speech service unavailable')));return;}String? localeId;try{final locales=await speech.locales();final wanted=language=='mr'?'mr':language=='en'?'en':'hi';final hit=locales.where((l)=>l.localeId.toLowerCase().startsWith(wanted)).toList();localeId=hit.isNotEmpty?hit.first.localeId:(await speech.systemLocale())?.localeId;}catch(_){}voicePhase.value='listening';if(mounted)setState(()=>listening=true);await speech.listen(listenOptions:stt.SpeechListenOptions(localeId:localeId,listenFor:const Duration(seconds:60),pauseFor:const Duration(seconds:2),partialResults:true,listenMode:stt.ListenMode.dictation,cancelOnError:false),onResult:(r){final words=r.recognizedWords.trim();if(words.isNotEmpty){lastVoiceText=words;input.text=words;input.selection=TextSelection.collapsed(offset:input.text.length);voiceWords.value=words;if(mounted)setState((){});}if(r.finalResult&&autoSend&&lastVoiceText.isNotEmpty){Future.microtask(_submitVoiceWords);}});}
  Future<void> fresh()async{await newChat();}
  Future<void> stopVoiceConversation()async{voiceMode=false;voicePhase.value='ready';voiceWords.value='';await speech.stop();await tts.stop();await liveVoice?.stop();liveVoice=null;await save();if(mounted)setState((){});}
  Future<void> openVoiceConversation()async{
@@ -421,7 +237,7 @@ class _ChatScreenState extends State<ChatScreen>{
   }
   return Scaffold(
    backgroundColor:const Color(0xfff8f9fc),
-   drawer:Drawer(child:SafeArea(child:Column(children:[ListTile(leading:const Icon(Icons.add_comment_outlined),title:const Text('New Chat'),onTap:()=>newChat().then((_)=>Navigator.pop(context))),ListTile(leading:const Icon(Icons.search),title:const Text('Search chats'),onTap:()=>_searchChats()),ListTile(leading:const Icon(Icons.language),title:Text(language=='en'?'English':language=='mr'?'मराठी':'हिंदी'),onTap:()=>chooseLanguage()),const Divider(),const ListTile(title:Text('Chat history',style:TextStyle(fontWeight:FontWeight.bold))),Expanded(child:ListView.builder(itemCount:chatSessions.length,itemBuilder:(c,i){final x=chatSessions[i];return ListTile(selected:'${x['id']}'==currentChatId,title:Text('${x['title']??'New Chat'}',maxLines:1,overflow:TextOverflow.ellipsis),leading:const Icon(Icons.chat_bubble_outline),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()=>deleteChat('${x['id']}')),onTap:()=>openChat('${x['id']}'));})),const Divider(),ListTile(leading:const Icon(Icons.system_update_outlined),title:const Text('App Update'),onTap:(){Navigator.pop(context);AppUpdateService.check(context,manual:true);}),ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share App'),onTap:(){Navigator.pop(context);AppUpdateService.shareApp();}),ListTile(leading:const Icon(Icons.delete_sweep_outlined),title:const Text('Delete all chats'),onTap:()=>deleteAllChats()),ListTile(leading:const Icon(Icons.logout_rounded),title:const Text('Logout'),onTap:()async{Navigator.pop(context);await widget.onLogout();})]))),
+   drawer:Drawer(child:SafeArea(child:Column(children:[ListTile(leading:const Icon(Icons.add_comment_outlined),title:const Text('New Chat'),onTap:()=>newChat().then((_)=>Navigator.pop(context))),ListTile(leading:const Icon(Icons.search),title:const Text('Search chats'),onTap:()=>_searchChats()),ListTile(leading:const Icon(Icons.language),title:Text(language=='en'?'English':language=='mr'?'मराठी':'हिंदी'),onTap:()=>chooseLanguage()),const Divider(),const ListTile(title:Text('Chat history',style:TextStyle(fontWeight:FontWeight.bold))),Expanded(child:ListView.builder(itemCount:chatSessions.length,itemBuilder:(c,i){final x=chatSessions[i];return ListTile(selected:'${x['id']}'==currentChatId,title:Text('${x['title']??'New Chat'}',maxLines:1,overflow:TextOverflow.ellipsis),leading:const Icon(Icons.chat_bubble_outline),trailing:IconButton(icon:const Icon(Icons.delete_outline),onPressed:()=>deleteChat('${x['id']}')),onTap:()=>openChat('${x['id']}'));})),const Divider(),ListTile(leading:const Icon(Icons.delete_sweep_outlined),title:const Text('Delete all chats'),onTap:()=>deleteAllChats()),ListTile(leading:const Icon(Icons.system_update_alt),title:const Text('App Update'),onTap:()=>AppUpdateService.check(context,manual:true)),ListTile(leading:const Icon(Icons.share_outlined),title:const Text('Share App'),onTap:()=>AppUpdateService.shareApp()),if(widget.onLogout!=null)ListTile(leading:const Icon(Icons.logout),title:const Text('Logout'),onTap:()async{await stopVoiceConversation();await widget.onLogout!();if(mounted)Navigator.pop(context);})]))),
    appBar:AppBar(
     backgroundColor:Colors.white,
     leading:Builder(builder:(c)=>IconButton(icon:const Icon(Icons.menu),onPressed:()=>Scaffold.of(c).openDrawer())),
