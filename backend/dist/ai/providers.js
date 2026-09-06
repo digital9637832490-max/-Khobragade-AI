@@ -277,7 +277,7 @@ Recent conversation:
 ${history.map((m) => `${m.role}: ${String(m.content || '').slice(0, 12000)}`).join('\n')}
 User: ${userMessage}
 Assistant:` : `You are a professional YouTube SEO expert. User request/topic: "${topic}". Generate useful YouTube content in the SAME LANGUAGE as the user's request. Return ONLY valid JSON: {"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}. No markdown or code fences.`;
-        const tools = isChat && searchRequested ? [{ google_search: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ google_maps: { latitude, longitude } }] : [])] : undefined;
+        const tools = isChat && searchRequested ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ googleMaps: {} }] : [])] : undefined;
         let primaryError = null;
         if (apiKey) {
             for (const model of chatModels) {
@@ -392,8 +392,14 @@ class GeminiImage {
             try {
                 const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
                     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } })
-                }, 60000);
+                    body: JSON.stringify({
+                        contents: [{ parts: [{ text: prompt }] }],
+                        generationConfig: {
+                            responseModalities: ['IMAGE'],
+                            responseFormat: { image: { aspectRatio: String(input.aspectRatio || '1:1'), imageSize: String(input.imageSize || '1K') } }
+                        }
+                    })
+                }, 90000);
                 const data = await response.json().catch(() => ({}));
                 if (response.ok) {
                     const image = (data?.candidates?.[0]?.content?.parts || []).find((x) => x?.inlineData?.data);
@@ -416,7 +422,18 @@ class GeminiImage {
             try {
                 const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai');
                 const model = env('POLLINATIONS_IMAGE_MODEL', 'flux');
-                const response = await fetchWithTimeout(`${base}/image/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`, { headers: { Authorization: `Bearer ${key}` } }, 90000);
+                const auth = { Authorization: `Bearer ${key}` };
+                const apiResponse = await fetchWithTimeout(`${base}/v1/images/generations`, {
+                    method: 'POST', headers: { ...auth, 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ model, prompt, size: String(input.size || '1024x1024'), n: 1, response_format: 'b64_json' })
+                }, 120000);
+                const apiData = await apiResponse.json().catch(() => ({}));
+                const b64 = apiData?.data?.[0]?.b64_json;
+                if (apiResponse.ok && b64) {
+                    markSuccess('pollinations-image', apiResponse.status);
+                    return { imageDataUrl: `data:image/png;base64,${b64}`, mimeType: 'image/png', provider: 'pollinations', model };
+                }
+                const response = await fetchWithTimeout(`${base}/image/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`, { headers: auth }, 120000);
                 if (response.ok) {
                     const mime = response.headers.get('content-type') || 'image/jpeg';
                     const buf = Buffer.from(await response.arrayBuffer());
@@ -425,7 +442,7 @@ class GeminiImage {
                         return { imageDataUrl: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'pollinations', model };
                     }
                 }
-                markFailure('pollinations-image', response.status, 'Pollinations returned no image');
+                markFailure('pollinations-image', response.status || apiResponse.status, apiData?.error?.message || 'Pollinations returned no image');
             }
             catch (e) {
                 markFailure('pollinations-image', undefined, e);
@@ -529,7 +546,7 @@ export function providerStatus() {
         gemini: !!geminiKey(), openrouter: !!env('OPENROUTER_API_KEY'), groq: !!env('GROQ_API_KEY'), cerebras: !!env('CEREBRAS_API_KEY'),
         mistral: !!env('MISTRAL_API_KEY'), deepseek: !!env('DEEPSEEK_API_KEY'), together: !!env('TOGETHER_API_KEY'), xai: !!env('XAI_API_KEY'), pollinations: !!env('POLLINATIONS_API_KEY')
     };
-    return Object.entries(configured).map(([name, isConfigured]) => ({ name, ...(providerState.get(name) || { failures: 0 }), configured: isConfigured }));
+    return Object.entries(configured).map(([name, isConfigured]) => ({ name, configured: isConfigured, ...(providerState.get(name) || { failures: 0 }) }));
 }
 export async function searchWeb(query) { return fetchWebContext(query); }
 export const textProvider = new GeminiText();
