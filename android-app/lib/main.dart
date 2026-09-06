@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'screens/home.dart';
 import 'screens/chat.dart';
 import 'screens/login.dart';
 import 'services/app_update_service.dart';

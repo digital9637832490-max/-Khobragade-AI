@@ -66,7 +66,7 @@ class _ChatScreenState extends State<ChatScreen>{
  Future<void> deleteChat(String id)async{
   if(busy)return;
   chatSessions.removeWhere((c)=>'${c['id']}'==id);
-  if(chatSessions.isEmpty){currentChatId=DateTime.now().microsecondsSinceEpoch.toString();chatSessions=[{'id':currentChatId,'title':'New Chat','messages':<Map<String,String>>[]}]}
+  if(chatSessions.isEmpty){currentChatId=DateTime.now().microsecondsSinceEpoch.toString();chatSessions=[{'id':currentChatId,'title':'New Chat','messages':<Map<String,String>>[]}];}
   if(!chatSessions.any((c)=>'${c['id']}'==currentChatId))currentChatId='${chatSessions.first['id']}';
   final cur=chatSessions.firstWhere((c)=>'${c['id']}'==currentChatId);messages=(cur['messages'] as List).map((e)=>Map<String,String>.from(e as Map)).toList();
   await save();if(mounted)setState((){});
