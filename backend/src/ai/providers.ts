@@ -108,7 +108,7 @@ function normalizeFemale(answer:string){
 
 async function openAiCompatibleFallback(input:Record<string,unknown>, system:string, user:string):Promise<string>{
   const providers:Array<{name:string;url:string;key:string;model:string}> = [
-    {name:'openrouter',url:'https://openrouter.ai/api/v1/chat/completions',key:process.env.OPENROUTER_API_KEY||'',model:process.env.OPENROUTER_CHAT_MODEL||'openai/gpt-oss-20b:free'},
+    {name:'openrouter',url:'https://openrouter.ai/api/v1/chat/completions',key:process.env.OPENROUTER_API_KEY||'',model:process.env.OPENROUTER_CHAT_MODEL||'openrouter/free'},
     {name:'groq',url:'https://api.groq.com/openai/v1/chat/completions',key:process.env.GROQ_API_KEY||'',model:process.env.GROQ_CHAT_MODEL||'llama-3.3-70b-versatile'},
     {name:'cerebras',url:'https://api.cerebras.ai/v1/chat/completions',key:process.env.CEREBRAS_API_KEY||'',model:process.env.CEREBRAS_CHAT_MODEL||'llama-3.3-70b'},
     {name:'pollinations',url:'https://gen.pollinations.ai/v1/chat/completions',key:process.env.POLLINATIONS_API_KEY||'',model:process.env.POLLINATIONS_TEXT_MODEL||'openai'},
@@ -150,6 +150,8 @@ class GeminiText implements TextProvider {
     const topic = String(input.topic || input.prompt || input.text || input.title || input.message || 'YouTube video');
     const history = Array.isArray(input.history) ? input.history : [];
     const voiceGender = String(input.voiceGender || 'female');
+    const language = String(input.language || 'hi');
+    const languageName = language === 'en' ? 'English' : language === 'mr' ? 'Marathi (मराठी)' : 'Hindi (हिंदी)';
     const userMessage = String(input.message || topic);
     if (isChat && /(who (created|made|developed) you|your creator|kisne (banaya|banayi)|किसने (बनाया|बनाई)|creator.*(kaun|who)|निर्माता कौन)/i.test(userMessage)) return {answer:'Mujhe Nitesh Khobragade ne banaya hai.'};
 
@@ -159,7 +161,7 @@ class GeminiText implements TextProvider {
     const prompt = isChat ? `
 You are ✨ Khobragade AI, a professional, friendly, general-purpose AI assistant created by Nitesh Khobragade.
 Your creator's name is EXACTLY: Nitesh Khobragade. Never translate or alter it.
-Your selected voice/persona gender is ${voiceGender}. If female, use feminine first-person Hindi/Hinglish/Marathi grammar such as "करती हूँ", "बताती हूँ", "समझाती हूँ", "कर सकती हूँ" and never masculine self-forms. If male, use masculine forms. Keep this consistent.
+The user's selected app language is ${languageName}. Always answer in that language unless the user explicitly asks for another language. Your selected voice/persona gender is ${voiceGender}. If female, use feminine first-person Hindi/Hinglish/Marathi grammar such as "करती हूँ", "बताती हूँ", "समझाती हूँ", "कर सकती हूँ" and never masculine self-forms. If male, use masculine forms. Keep this consistent.
 You are a complete conversational assistant, not a text-only AI. You can answer general questions, code, translate, understand attachments, search the web, summarize news, generate images/videos through application tools, and use location context when supplied.
 Current user date/time: ${localDateTime || 'not supplied'}
 User timezone: ${timeZone || 'not supplied'}
@@ -209,7 +211,7 @@ You are a professional YouTube SEO expert. User request/topic: "${topic}". Gener
       try{const result=JSON.parse(text);return{titles:Array.isArray(result.titles)?result.titles:[],description:result.description||'',tags:Array.isArray(result.tags)?result.tags:[],hashtags:Array.isArray(result.hashtags)?result.hashtags:[]};}catch{return{titles:[],description:text,tags:[],hashtags:[]};}
     } catch(primaryError:any) {
       if(!isChat || input.attachmentData){throw primaryError;}
-      const system=`You are Khobragade AI, created by Nitesh Khobragade. Selected voice gender: ${voiceGender}. Use feminine first-person grammar if female. Answer in the user's language. Do not claim you are text-only. For current/search/news requests use only supplied web context and identify sources. Web context:\n${external.text||'none'}`;
+      const system=`You are Khobragade AI, created by Nitesh Khobragade. The user's selected language is ${languageName}. Answer in that language unless explicitly asked otherwise. Selected voice gender: ${voiceGender}. Use feminine first-person grammar if female. Answer in the user's language. Do not claim you are text-only. For current/search/news requests use only supplied web context and identify sources. Web context:\n${external.text||'none'}`;
       const answer=await openAiCompatibleFallback(input,system,userMessage);
       const normalized=voiceGender==='female'?normalizeFemale(answer):answer;
       const suffix=external.sources.length&&searchRequested?`\n\nSources:\n${external.sources.map(x=>`- ${x.title}: ${x.url}`).join('\n')}`:'';

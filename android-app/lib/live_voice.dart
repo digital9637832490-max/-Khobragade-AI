@@ -30,7 +30,7 @@ class LiveVoiceSession {
     final api=Uri.parse(Config.apiBaseUrl);
     final scheme=api.scheme=='https'?'wss':'ws';
     final basePath=api.path.endsWith('/api')?api.path:'${api.path}/api';
-    final uri=Uri(scheme:scheme,host:api.host,port:api.hasPort?api.port:null,path:'$basePath/live-voice',queryParameters:{'token':token,'gender':gender,if(context?['timeZone']!=null)'tz':'${context?['timeZone']}',if(context?['localDateTime']!=null)'local':'${context?['localDateTime']}',if(context?['locationLabel']!=null)'loc':'${context?['locationLabel']}',if(context?['deviceModel']!=null)'device':'${context?['deviceManufacturer']??''} ${context?['deviceModel']??''} Android ${context?['deviceAndroidVersion']??''}',if(context?['batteryPercent']!=null)'battery':'${context?['batteryPercent']}' });
+    final uri=Uri(scheme:scheme,host:api.host,port:api.hasPort?api.port:null,path:'$basePath/live-voice',queryParameters:{'token':token,'gender':gender,if(context?['language']!=null)'lang':'${context?['language']}',if(context?['timeZone']!=null)'tz':'${context?['timeZone']}',if(context?['localDateTime']!=null)'local':'${context?['localDateTime']}',if(context?['locationLabel']!=null)'loc':'${context?['locationLabel']}',if(context?['deviceModel']!=null)'device':'${context?['deviceManufacturer']??''} ${context?['deviceModel']??''} Android ${context?['deviceAndroidVersion']??''}',if(context?['batteryPercent']!=null)'battery':'${context?['batteryPercent']}' });
     _ws=WebSocketChannel.connect(uri);
     await _ws!.ready;
     _wsSub=_ws!.stream.listen(_handleMessage,onError:(e)=>_fail('Live voice connection failed: ${e.toString()}'),onDone:(){if(!_closed)_fail('Live voice disconnected');});

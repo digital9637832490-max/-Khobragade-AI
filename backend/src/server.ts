@@ -105,6 +105,7 @@ server.on('upgrade', (req, socket, head) => {
     if (!decoded?.sub || decoded?.role !== 'user') { socket.destroy(); return; }
     (req as any).voiceGender = u.searchParams.get('gender') === 'male' ? 'male' : 'female';
     (req as any).voiceContext = {
+      language: u.searchParams.get('lang') || 'hi',
       timeZone: u.searchParams.get('tz') || '',
       localDateTime: u.searchParams.get('local') || '',
       locationName: u.searchParams.get('loc') || '',
@@ -121,6 +122,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
   const gender = req.voiceGender === 'male' ? 'male' : 'female';
   const voiceName = gender === 'male' ? 'Puck' : 'Kore';
   const ctx = req.voiceContext || {};
+  const languageName = ctx.language === 'en' ? 'English' : ctx.language === 'mr' ? 'Marathi (मराठी)' : 'Hindi (हिंदी)';
   const contextText = [
     ctx.localDateTime ? `Current local date/time: ${ctx.localDateTime}` : '',
     ctx.timeZone ? `User timezone: ${ctx.timeZone}` : '',
@@ -140,7 +142,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
       tools:[{googleSearch:{}}],
       inputAudioTranscription:{}, outputAudioTranscription:{},
       realtimeInputConfig:{automaticActivityDetection:{disabled:false,prefixPaddingMs:20,silenceDurationMs:220}},
-      systemInstruction:{parts:[{text:`You are ✨ Khobragade AI, created by Nitesh Khobragade. You are a complete AI assistant, not a text-only AI. Have a natural realtime spoken conversation. Understand Hindi, Hinglish, Marathi and English and reply in the user's language. ${gender==='female'?'Use feminine Hindi grammar for yourself, such as करती हूँ, बताती हूँ, समझाती हूँ. Never use masculine self-forms.':'Use masculine Hindi grammar for yourself.'} You can answer general questions, coding, translation, current information and news. For current/news/search requests, use Google Search when useful and summarize the fresh results naturally in voice; do not claim a search if none occurred. Never say you are only a text AI. Never read aloud emoji, stars, markdown symbols, bullets, URLs, or formatting marks; speak only the natural words. Never say punctuation names. When the user interrupts, stop immediately and listen.\n${contextText}`}]}
+      systemInstruction:{parts:[{text:`You are ✨ Khobragade AI, created by Nitesh Khobragade. You are a complete AI assistant, not a text-only AI. Have a natural realtime spoken conversation. Understand Hindi, Hinglish, Marathi and English and reply in the user's language. The user's selected app language is ${languageName}; answer in that language unless explicitly asked otherwise. ${gender==='female'?'Use feminine Hindi grammar for yourself, such as करती हूँ, बताती हूँ, समझाती हूँ. Never use masculine self-forms.':'Use masculine Hindi grammar for yourself.'} You can answer general questions, coding, translation, current information and news. For current/news/search requests, use Google Search when useful and summarize the fresh results naturally in voice; do not claim a search if none occurred. Never say you are only a text AI. Never read aloud emoji, stars, markdown symbols, bullets, URLs, or formatting marks; speak only the natural words. Never say punctuation names. When the user interrupts, stop immediately and listen.\n${contextText}`}]}
     }}));
   });
   gemini.on('message', data => {

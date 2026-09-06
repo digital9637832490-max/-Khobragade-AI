@@ -88,16 +88,17 @@ userRouter.post('/ai/voice-chat', async(req,res,next)=>{try{
     message:z.string().min(1).max(12000),
     history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),
     voiceGender:z.enum(['female','male']).default('female'),
+    language:z.enum(['en','hi','mr']).default('hi'),
     localDateTime:z.string().max(120).optional(),
     timeZone:z.string().max(120).optional(),
     locationName:z.string().max(255).optional(),
     latitude:z.number().min(-90).max(90).optional(),
     longitude:z.number().min(-180).max(180).optional()
   }).parse(req.body);
-  const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude});
+  const result=await textProvider.generate({mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,language:b.language,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude});
   res.json(result);
 }catch(e){next(e)}});
-userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),localDateTime:z.string().max(120).optional(),timeZone:z.string().max(120).optional(),locationName:z.string().max(255).optional(),latitude:z.number().min(-90).max(90).optional(),longitude:z.number().min(-180).max(180).optional(),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
+userRouter.post('/ai/chat', async(req,res,next)=>{try{const b=z.object({message:z.string().min(1).max(12000),history:z.array(z.object({role:z.enum(['user','assistant']),content:z.string()})).max(20).default([]),voiceGender:z.enum(['female','male']).default('female'),language:z.enum(['en','hi','mr']).default('hi'),localDateTime:z.string().max(120).optional(),timeZone:z.string().max(120).optional(),locationName:z.string().max(255).optional(),latitude:z.number().min(-90).max(90).optional(),longitude:z.number().min(-180).max(180).optional(),attachmentName:z.string().max(255).optional(),attachmentMime:z.string().max(120).optional(),attachmentData:z.string().max(20_000_000).optional()}).parse(req.body);res.status(202).json(await createAiJob(req.auth!.id,'chat',{mode:'chat',message:b.message,history:b.history,voiceGender:b.voiceGender,language:b.language,localDateTime:b.localDateTime,timeZone:b.timeZone,locationName:b.locationName,latitude:b.latitude,longitude:b.longitude,attachmentName:b.attachmentName,attachmentMime:b.attachmentMime,attachmentData:b.attachmentData}));}catch(e){next(e)}});
 userRouter.post('/ai/thumbnail', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'thumbnail',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/photo', async(req,res,next)=>{try{res.status(202).json(await createAiJob(req.auth!.id,'photo',req.body));}catch(e){next(e)}});
 userRouter.post('/ai/content', async(req,res,next)=>{try{
