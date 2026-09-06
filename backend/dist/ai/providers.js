@@ -529,7 +529,7 @@ export function providerStatus() {
         gemini: !!geminiKey(), openrouter: !!env('OPENROUTER_API_KEY'), groq: !!env('GROQ_API_KEY'), cerebras: !!env('CEREBRAS_API_KEY'),
         mistral: !!env('MISTRAL_API_KEY'), deepseek: !!env('DEEPSEEK_API_KEY'), together: !!env('TOGETHER_API_KEY'), xai: !!env('XAI_API_KEY'), pollinations: !!env('POLLINATIONS_API_KEY')
     };
-    return Object.entries(configured).map(([name, isConfigured]) => ({ name, configured: isConfigured, ...(providerState.get(name) || { failures: 0 }) }));
+    return Object.entries(configured).map(([name, isConfigured]) => ({ name, ...(providerState.get(name) || { failures: 0 }), configured: isConfigured }));
 }
 export async function searchWeb(query) { return fetchWebContext(query); }
 export const textProvider = new GeminiText();
