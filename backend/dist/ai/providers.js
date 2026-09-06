@@ -1,112 +1,174 @@
-function geminiKey() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey)
-        throw new Error('GEMINI_API_KEY missing in Render Environment');
-    return apiKey;
+const providerState = new Map();
+const nowIso = () => new Date().toISOString();
+function state(name, configured) {
+    const current = providerState.get(name) || { configured, failures: 0 };
+    current.configured = configured;
+    providerState.set(name, current);
+    return current;
 }
-/* =========================
-   GEMINI TEXT PROVIDER
-   Chat + Title + Description + Tags
-========================= */
+function markSuccess(name, status = 200) {
+    const s = state(name, true);
+    s.lastStatus = status;
+    s.lastSuccessAt = nowIso();
+    s.lastError = undefined;
+    s.failures = 0;
+}
+function markFailure(name, status, error) {
+    const s = state(name, true);
+    s.lastStatus = status;
+    s.lastError = String(error || 'Provider request failed').slice(0, 300);
+    s.failures += 1;
+}
+function env(key, fallback = '') { return String(process.env[key] || fallback).trim(); }
+function geminiKey() {
+    return env('GEMINI_API_KEY') || env('GOOGLE_GEMINI_API_KEY');
+}
+async function fetchWithTimeout(url, init = {}, timeoutMs = 30000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...init, signal: controller.signal });
+    }
+    finally {
+        clearTimeout(timer);
+    }
+}
+function decodeHtml(value) {
+    return value
+        .replace(/<!\[CDATA\[/g, '').replace(/\]\]>/g, '')
+        .replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+        .replace(/&#x27;/gi, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+        .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+function unwrapDuckUrl(raw) {
+    const value = decodeHtml(raw);
+    try {
+        const u = new URL(value, 'https://duckduckgo.com');
+        return u.searchParams.get('uddg') || value;
+    }
+    catch {
+        return value;
+    }
+}
 async function fetchWebContext(query) {
     const q = query.trim();
     if (!q)
         return { text: '', sources: [] };
     const sources = [];
     const blocks = [];
-    const add = (title, url, snippet) => { if (url && !sources.some(s => s.url === url)) {
-        sources.push({ title: title || url, url });
-        blocks.push(`- ${title || url}: ${snippet}`);
-    } };
-    const newsLike = /(news|latest|today|breaking|headline|खबर|न्यूज़|ताज़ा|आज की|ब्रेकिंग)/i.test(q);
-    try {
-        if (newsLike) {
+    const add = (title, url, snippet = '') => {
+        if (!url || sources.some(s => s.url === url))
+            return;
+        const cleanTitle = title || url;
+        sources.push({ title: cleanTitle, url, snippet });
+        blocks.push(`- ${cleanTitle}: ${snippet || 'Web search result'}`);
+    };
+    const newsLike = /(news|latest|today|breaking|headline|current events|खबर|न्यूज़|ताज़ा|आज की|ब्रेकिंग|समाचार)/i.test(q);
+    if (newsLike) {
+        try {
             const u = `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&hl=en-IN&gl=IN&ceid=IN:en`;
-            const r = await fetch(u, { headers: { 'User-Agent': 'KhobragadeAI/1.0' } });
+            const r = await fetchWithTimeout(u, { headers: { 'User-Agent': 'Mozilla/5.0 KhobragadeAI/1.0' } }, 10000);
             if (r.ok) {
                 const xml = await r.text();
-                const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].slice(0, 8);
-                for (const m of items) {
+                for (const m of [...xml.matchAll(/<item>([\s\S]*?)<\/item>/gi)].slice(0, 10)) {
                     const item = m[1];
-                    const title = (item.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
-                    const link = (item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || '').trim();
-                    const desc = (item.match(/<description>([\s\S]*?)<\/description>/i)?.[1] || '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&#39;/g, "'").replace(/&quot;/g, '"').trim();
+                    const title = decodeHtml(item.match(/<title>([\s\S]*?)<\/title>/i)?.[1] || '');
+                    const link = decodeHtml(item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] || '');
+                    const desc = decodeHtml(item.match(/<description>([\s\S]*?)<\/description>/i)?.[1] || '').slice(0, 700);
                     if (title && link)
-                        add(title, link, desc.slice(0, 500));
+                        add(title, link, desc);
                 }
             }
         }
+        catch (e) {
+            console.warn('Google News search failed', e);
+        }
     }
-    catch (e) {
-        console.warn('Google News RSS fallback failed', e);
-    }
-    // Keyless generic web-search fallback. This is deliberately used only as a fallback
-    // so provider keys / Gemini grounding remain the preferred path.
-    try {
-        if (!newsLike && sources.length === 0) {
-            const u = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-            const r = await fetch(u, { headers: { 'User-Agent': 'KhobragadeAI/1.0' } });
+    // API-backed search providers are preferred. Any configured provider is real web search;
+    // failed/limited providers are skipped instead of returning fake data.
+    const tavily = env('TAVILY_API_KEY');
+    if (tavily && sources.length < 8) {
+        try {
+            const r = await fetchWithTimeout('https://api.tavily.com/search', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ api_key: tavily, query: q, max_results: 8, search_depth: newsLike ? 'advanced' : 'basic', include_answer: false })
+            }, 15000);
+            const d = await r.json();
             if (r.ok) {
-                const html = await r.text();
-                const matches = [...html.matchAll(/<a[^>]+class=[\"']result__a[\"'][^>]+href=[\"']([^\"']+)[\"'][^>]*>([\s\S]*?)<\/a>/gi)].slice(0, 8);
-                for (const m of matches) {
-                    const url = String(m[1] || '').replace(/&amp;/g, '&');
-                    const title = String(m[2] || '').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').trim();
-                    if (url && title)
+                markSuccess('tavily', r.status);
+                for (const x of d.results || [])
+                    add(String(x.title || ''), String(x.url || ''), String(x.content || '').slice(0, 800));
+            }
+            else
+                markFailure('tavily', r.status, d?.detail || d?.error);
+        }
+        catch (e) {
+            markFailure('tavily', undefined, e);
+        }
+    }
+    const brave = env('BRAVE_SEARCH_API_KEY');
+    if (brave && sources.length < 8) {
+        try {
+            const u = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=8&country=IN&search_lang=en`;
+            const r = await fetchWithTimeout(u, { headers: { Accept: 'application/json', 'X-Subscription-Token': brave } }, 15000);
+            const d = await r.json();
+            if (r.ok) {
+                markSuccess('brave', r.status);
+                for (const x of d.web?.results || [])
+                    add(String(x.title || ''), String(x.url || ''), String(x.description || '').slice(0, 800));
+            }
+            else
+                markFailure('brave', r.status, d?.message || d?.error);
+        }
+        catch (e) {
+            markFailure('brave', undefined, e);
+        }
+    }
+    const serper = env('SERPER_API_KEY');
+    if (serper && sources.length < 8) {
+        try {
+            const r = await fetchWithTimeout('https://google.serper.dev/search', {
+                method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-KEY': serper },
+                body: JSON.stringify({ q, gl: 'in', hl: 'en', num: 8 })
+            }, 15000);
+            const d = await r.json();
+            if (r.ok) {
+                markSuccess('serper', r.status);
+                for (const x of d.organic || [])
+                    add(String(x.title || ''), String(x.link || ''), String(x.snippet || '').slice(0, 800));
+            }
+            else
+                markFailure('serper', r.status, d?.message || d?.error);
+        }
+        catch (e) {
+            markFailure('serper', undefined, e);
+        }
+    }
+    // Keyless fallback. DuckDuckGo is a real search result page, not a generated answer.
+    if (sources.length === 0) {
+        try {
+            const u = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+            const r = await fetchWithTimeout(u, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; KhobragadeAI/1.0)' } }, 12000);
+            const html = await r.text();
+            if (r.ok) {
+                const pattern = /<a[^>]*class=["'][^"']*result__a[^"']*["'][^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+                for (const m of [...html.matchAll(pattern)].slice(0, 8)) {
+                    const url = unwrapDuckUrl(m[1]);
+                    const title = decodeHtml(m[2]);
+                    if (title && /^https?:\/\//i.test(url))
                         add(title, url, 'Web search result');
                 }
             }
         }
-    }
-    catch (e) {
-        console.warn('DuckDuckGo fallback failed', e);
-    }
-    try {
-        const tavily = process.env.TAVILY_API_KEY;
-        if (tavily) {
-            const r = await fetch('https://api.tavily.com/search', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: tavily, query: q, max_results: 5, search_depth: 'basic', include_answer: false }) });
-            if (r.ok) {
-                const d = await r.json();
-                for (const x of (d.results || []))
-                    add(String(x.title || ''), String(x.url || ''), String(x.content || '').slice(0, 700));
-            }
+        catch (e) {
+            console.warn('DuckDuckGo search failed', e);
         }
-    }
-    catch (e) {
-        console.warn('Tavily fallback failed', e);
-    }
-    try {
-        const brave = process.env.BRAVE_SEARCH_API_KEY;
-        if (brave && sources.length < 5) {
-            const u = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(q)}&count=5&country=IN&search_lang=en`;
-            const r = await fetch(u, { headers: { Accept: 'application/json', 'X-Subscription-Token': brave } });
-            if (r.ok) {
-                const d = await r.json();
-                for (const x of (d.web?.results || []))
-                    add(String(x.title || ''), String(x.url || ''), String(x.description || '').slice(0, 700));
-            }
-        }
-    }
-    catch (e) {
-        console.warn('Brave fallback failed', e);
-    }
-    try {
-        const serper = process.env.SERPER_API_KEY;
-        if (serper && sources.length < 5) {
-            const r = await fetch('https://google.serper.dev/search', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-API-KEY': serper }, body: JSON.stringify({ q, gl: 'in', hl: 'en', num: 5 }) });
-            if (r.ok) {
-                const d = await r.json();
-                for (const x of (d.organic || []))
-                    add(String(x.title || ''), String(x.link || ''), String(x.snippet || '').slice(0, 700));
-            }
-        }
-    }
-    catch (e) {
-        console.warn('Serper fallback failed', e);
     }
     return { text: blocks.slice(0, 10).join('\n'), sources: sources.slice(0, 10) };
 }
-function shouldSearch(message) { return /(search|google|web|internet|latest|today|current|news|headline|source|sources|खोज|सर्च|वेब|इंटरनेट|ताज़ा|आज|समाचार|खबर|न्यूज़|सोर्स)/i.test(message); }
+function shouldSearch(message) {
+    return /(search|google|web|website|internet|latest|today|current|news|headline|source|sources|find|look up|खोज|सर्च|वेब|वेबसाइट|इंटरनेट|ताज़ा|आज|समाचार|खबर|न्यूज़|सोर्स|ढूंढ|ढूँढ|खोजो)/i.test(message);
+}
 function normalizeFemale(answer) {
     return answer.replace(/नितेश\s+खोबरागड़े|नितेश\s+खोब्रागड़े|नितेश\s+खोबरागडे/gi, 'Nitesh Khobragade')
         .replace(/करता हूँ/g, 'करती हूँ').replace(/करता हूं/g, 'करती हूं')
@@ -114,57 +176,74 @@ function normalizeFemale(answer) {
         .replace(/समझाता हूँ/g, 'समझाती हूँ').replace(/समझाता हूं/g, 'समझाती हूं')
         .replace(/सकता हूँ/g, 'सकती हूँ').replace(/सकता हूं/g, 'सकती हूं');
 }
-async function openAiCompatibleFallback(input, system, user) {
-    const providers = [
-        { name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', key: process.env.OPENROUTER_API_KEY || '', model: process.env.OPENROUTER_CHAT_MODEL || 'openai/gpt-oss-20b:free' },
-        { name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: process.env.GROQ_API_KEY || '', model: process.env.GROQ_CHAT_MODEL || 'llama-3.3-70b-versatile' },
-        { name: 'cerebras', url: 'https://api.cerebras.ai/v1/chat/completions', key: process.env.CEREBRAS_API_KEY || '', model: process.env.CEREBRAS_CHAT_MODEL || 'llama-3.3-70b' },
-        { name: 'mistral', url: 'https://api.mistral.ai/v1/chat/completions', key: process.env.MISTRAL_API_KEY || '', model: process.env.MISTRAL_CHAT_MODEL || 'mistral-small-latest' },
-        { name: 'deepseek', url: 'https://api.deepseek.com/chat/completions', key: process.env.DEEPSEEK_API_KEY || '', model: process.env.DEEPSEEK_CHAT_MODEL || 'deepseek-chat' },
-        { name: 'together', url: 'https://api.together.xyz/v1/chat/completions', key: process.env.TOGETHER_API_KEY || '', model: process.env.TOGETHER_CHAT_MODEL || 'meta-llama/Llama-3.3-70B-Instruct-Turbo' },
-        { name: 'xai', url: 'https://api.x.ai/v1/chat/completions', key: process.env.XAI_API_KEY || '', model: process.env.XAI_CHAT_MODEL || 'grok-3-mini' },
-        { name: 'pollinations', url: 'https://gen.pollinations.ai/v1/chat/completions', key: process.env.POLLINATIONS_API_KEY || '', model: process.env.POLLINATIONS_TEXT_MODEL || 'openai' },
+function providerConfigs() {
+    return [
+        { name: 'openrouter', url: 'https://openrouter.ai/api/v1/chat/completions', key: env('OPENROUTER_API_KEY'), model: env('OPENROUTER_CHAT_MODEL', 'openrouter/free') },
+        { name: 'groq', url: 'https://api.groq.com/openai/v1/chat/completions', key: env('GROQ_API_KEY'), model: env('GROQ_CHAT_MODEL', 'openai/gpt-oss-20b') },
+        { name: 'cerebras', url: 'https://api.cerebras.ai/v1/chat/completions', key: env('CEREBRAS_API_KEY'), model: env('CEREBRAS_CHAT_MODEL', 'llama-3.3-70b') },
+        { name: 'mistral', url: 'https://api.mistral.ai/v1/chat/completions', key: env('MISTRAL_API_KEY'), model: env('MISTRAL_CHAT_MODEL', 'mistral-large-latest') },
+        { name: 'deepseek', url: 'https://api.deepseek.com/chat/completions', key: env('DEEPSEEK_API_KEY'), model: env('DEEPSEEK_CHAT_MODEL', 'deepseek-v4-pro') },
+        { name: 'together', url: 'https://api.together.ai/v1/chat/completions', key: env('TOGETHER_API_KEY'), model: env('TOGETHER_CHAT_MODEL', 'openai/gpt-oss-20b') },
+        { name: 'xai', url: 'https://api.x.ai/v1/chat/completions', key: env('XAI_API_KEY'), model: env('XAI_CHAT_MODEL', 'grok-4.6') },
+        { name: 'pollinations', url: `${env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai')}/v1/chat/completions`, key: env('POLLINATIONS_API_KEY'), model: env('POLLINATIONS_TEXT_MODEL', 'openai') },
     ];
-    for (const p of providers) {
-        if (!p.key && p.name !== 'pollinations')
+}
+function extractCompletion(data) {
+    const content = data?.choices?.[0]?.message?.content ?? data?.choices?.[0]?.text ?? data?.output_text;
+    if (Array.isArray(content))
+        return content.map((x) => x?.text || '').join('').trim();
+    return String(content || '').trim();
+}
+async function openAiCompatibleFallback(system, user, history = []) {
+    const messages = [
+        { role: 'system', content: system },
+        ...history.slice(-12).map((m) => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: String(m.content || '').slice(0, 12000) })),
+        { role: 'user', content: user },
+    ];
+    for (const p of providerConfigs()) {
+        state(p.name, !!p.key);
+        if (!p.key)
             continue;
         try {
-            const headers = { 'Content-Type': 'application/json' };
-            if (p.key)
-                headers.Authorization = `Bearer ${p.key}`;
-            const r = await fetch(p.url, { method: 'POST', headers, body: JSON.stringify({ model: p.model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], temperature: 0.4 }) });
-            const d = await r.json();
-            if (r.ok) {
-                const t = String(d?.choices?.[0]?.message?.content || '').trim();
-                if (t)
-                    return t;
+            const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${p.key}` };
+            if (p.name === 'openrouter') {
+                headers['HTTP-Referer'] = env('WEBSITE_URL', 'https://khobragade-ai.vercel.app');
+                headers['X-Title'] = 'Khobragade AI';
             }
+            const r = await fetchWithTimeout(p.url, { method: 'POST', headers, body: JSON.stringify({ model: p.model, messages, temperature: 0.4, max_tokens: 4096 }) }, 15000);
+            const d = await r.json().catch(() => ({}));
+            if (r.ok) {
+                const text = extractCompletion(d);
+                if (text) {
+                    markSuccess(p.name, r.status);
+                    return { text, provider: p.name };
+                }
+            }
+            markFailure(p.name, r.status, d?.error?.message || d?.error || `HTTP ${r.status}`);
             console.warn(`${p.name} fallback failed`, r.status, d?.error?.message || d?.error || '');
         }
         catch (e) {
+            markFailure(p.name, undefined, e);
             console.warn(`${p.name} fallback error`, e);
         }
     }
-    // Legacy public endpoint is retained only as a last-resort compatibility path.
-    try {
-        const url = `https://text.pollinations.ai/${encodeURIComponent(user.slice(0, 12000))}?model=openai`;
-        const r = await fetch(url, { headers: { 'User-Agent': 'KhobragadeAI/1.0' } });
-        if (r.ok) {
-            const t = (await r.text()).trim();
-            if (t)
-                return t;
-        }
-    }
-    catch (e) {
-        console.warn('Legacy text fallback failed', e);
-    }
     throw new Error('ALL_AI_PROVIDERS_EXHAUSTED');
+}
+function parseStructuredText(text) {
+    const cleaned = text.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+    try {
+        const result = JSON.parse(cleaned);
+        return { titles: Array.isArray(result.titles) ? result.titles : [], description: String(result.description || ''), tags: Array.isArray(result.tags) ? result.tags : [], hashtags: Array.isArray(result.hashtags) ? result.hashtags : [] };
+    }
+    catch {
+        return { titles: [], description: text, tags: [], hashtags: [] };
+    }
 }
 class GeminiText {
     async generate(input) {
-        const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
+        const apiKey = geminiKey();
         const isChat = input.mode === 'chat';
-        const chatModel = process.env.GEMINI_CHAT_MODEL || 'gemini-3.6-flash';
+        const chatModels = [env('GEMINI_CHAT_MODEL', 'gemini-3.7-flash'), 'gemini-3.6-flash', 'gemini-3.5-flash'].filter((v, i, a) => v && a.indexOf(v) === i);
         const localDateTime = String(input.localDateTime || '').trim();
         const timeZone = String(input.timeZone || '').trim();
         const latitude = Number(input.latitude);
@@ -173,87 +252,91 @@ class GeminiText {
         const topic = String(input.topic || input.prompt || input.text || input.title || input.message || 'YouTube video');
         const history = Array.isArray(input.history) ? input.history : [];
         const voiceGender = String(input.voiceGender || 'female');
+        const language = String(input.language || 'hi');
+        const languageName = language === 'en' ? 'English' : language === 'mr' ? 'Marathi (मराठी)' : 'Hindi (हिंदी)';
         const userMessage = String(input.message || topic);
         if (isChat && /(who (created|made|developed) you|your creator|kisne (banaya|banayi)|किसने (बनाया|बनाई)|creator.*(kaun|who)|निर्माता कौन)/i.test(userMessage))
             return { answer: 'Mujhe Nitesh Khobragade ne banaya hai.' };
         const searchRequested = shouldSearch(userMessage);
-        let external = { text: '', sources: [] };
-        if (searchRequested)
-            external = await fetchWebContext(userMessage);
-        const prompt = isChat ? `
-You are ✨ Khobragade AI, a professional, friendly, general-purpose AI assistant created by Nitesh Khobragade.
-Your creator's name is EXACTLY: Nitesh Khobragade. Never translate or alter it.
-Your selected voice/persona gender is ${voiceGender}. If female, use feminine first-person Hindi/Hinglish/Marathi grammar such as "करती हूँ", "बताती हूँ", "समझाती हूँ", "कर सकती हूँ" and never masculine self-forms. If male, use masculine forms. Keep this consistent.
-You are a complete conversational assistant, not a text-only AI. You can answer general questions, code, translate, understand attachments, search the web, summarize news, generate images/videos through application tools, and use location context when supplied.
-Current user date/time: ${localDateTime || 'not supplied'}
+        const external = searchRequested ? await fetchWebContext(userMessage) : { text: '', sources: [] };
+        const prompt = isChat ? `You are ✨ Khobragade AI, a professional, friendly general-purpose AI assistant created by Nitesh Khobragade.
+Creator name is exactly: Nitesh Khobragade. Never alter it.
+Selected language: ${languageName}. Answer in that language unless explicitly asked otherwise.
+Voice/persona gender: ${voiceGender}. If female, use feminine first-person Hindi/Hinglish/Marathi grammar. If male, use masculine grammar.
+You can answer general questions, code, translation, attachments, current information, news, web research, image/video requests and everyday tasks.
+Current local date/time: ${localDateTime || 'not supplied'}
 User timezone: ${timeZone || 'not supplied'}
 User location: ${locationName || (Number.isFinite(latitude) && Number.isFinite(longitude) ? `${latitude}, ${longitude}` : 'not supplied')}
-When asked current time/date, use supplied local context exactly. When asked current location, never invent it.
-If current/news/search information is requested, prioritize the supplied web-search context and clearly identify sources. Never claim a web search happened if it did not.
-If the user asks to create an image or video, do not say you are a text-only AI; the app has dedicated generation tools.
-Recent conversation:
-${history.map((m) => `${m.role}: ${m.content}`).join('\n')}
-External web context (may be empty):
+When asked current time/date, use the supplied local context exactly. When asked current location, never invent it.
+For current/news/search questions, use only the supplied web-search context and clearly distinguish search results from general knowledge. Never claim a search happened if no sources were returned.
+Never claim an image/video was generated unless the application tool actually generated it.
+Keep the answer complete and natural. Do not unnecessarily shorten the answer.
+External web-search context:
 ${external.text || 'none'}
+Recent conversation:
+${history.map((m) => `${m.role}: ${String(m.content || '').slice(0, 12000)}`).join('\n')}
 User: ${userMessage}
-Assistant:` : `
-You are a professional YouTube SEO expert. User request/topic: "${topic}". Generate useful YouTube content in the SAME LANGUAGE as the user's request. Return ONLY valid JSON with this structure: {"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}. Do not use markdown or code fences.`;
-        const tools = isChat ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ googleMaps: {} }] : [])] : undefined;
-        const toolConfig = isChat && Number.isFinite(latitude) && Number.isFinite(longitude) ? { retrievalConfig: { latLng: { latitude, longitude } } } : undefined;
-        try {
-            if (!apiKey)
-                throw new Error('GEMINI_API_KEY missing');
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${chatModel}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify({ contents: [{ role: 'user', parts: [{ text: prompt }, ...(isChat && input.attachmentData && input.attachmentMime ? [{ inlineData: { mimeType: String(input.attachmentMime), data: String(input.attachmentData) } }] : [])] }], ...(tools ? { tools } : {}), ...(toolConfig ? { toolConfig } : {}), generationConfig: isChat ? {} : { temperature: .8, responseMimeType: 'application/json' } }) });
-            const data = await response.json();
-            if (!response.ok) {
-                const raw = JSON.stringify(data);
-                if (response.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(raw)) {
-                    throw new Error(/PerDay|per day|daily/i.test(raw) ? 'GEMINI_DAILY_QUOTA' : 'GEMINI_RATE_LIMIT');
+Assistant:` : `You are a professional YouTube SEO expert. User request/topic: "${topic}". Generate useful YouTube content in the SAME LANGUAGE as the user's request. Return ONLY valid JSON: {"titles":["title 1","title 2","title 3","title 4","title 5"],"description":"Professional YouTube description","tags":["tag1","tag2","tag3","tag4","tag5","tag6","tag7","tag8","tag9","tag10"],"hashtags":["#hashtag1","#hashtag2","#hashtag3","#hashtag4","#hashtag5"]}. No markdown or code fences.`;
+        const tools = isChat && searchRequested ? [{ googleSearch: {} }, ...(Number.isFinite(latitude) && Number.isFinite(longitude) ? [{ googleMaps: {} }] : [])] : undefined;
+        let primaryError = null;
+        if (apiKey) {
+            for (const model of chatModels) {
+                try {
+                    const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                        method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                        body: JSON.stringify({
+                            contents: [{ role: 'user', parts: [{ text: prompt }, ...(isChat && input.attachmentData && input.attachmentMime ? [{ inlineData: { mimeType: String(input.attachmentMime), data: String(input.attachmentData) } }] : [])] }],
+                            ...(tools ? { tools } : {}),
+                            generationConfig: isChat ? {} : { temperature: 0.8, responseMimeType: 'application/json' }
+                        })
+                    }, 45000);
+                    const data = await response.json().catch(() => ({}));
+                    if (!response.ok) {
+                        primaryError = new Error(/PerDay|per day|daily/i.test(JSON.stringify(data)) ? 'GEMINI_DAILY_QUOTA' : (response.status === 429 || /RESOURCE_EXHAUSTED|quota/i.test(JSON.stringify(data)) ? 'GEMINI_RATE_LIMIT' : String(data?.error?.message || `Gemini API failed with status ${response.status}`)));
+                        markFailure('gemini', response.status, primaryError);
+                        continue;
+                    }
+                    const text = String(data?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('').trim() || '');
+                    if (!text) {
+                        primaryError = new Error('Gemini returned empty response');
+                        markFailure('gemini', response.status, primaryError);
+                        continue;
+                    }
+                    markSuccess('gemini', response.status);
+                    if (!isChat)
+                        return parseStructuredText(text);
+                    let answer = voiceGender === 'female' ? normalizeFemale(text) : text.replace(/नितेश\s+खोबरागड़े|नितेश\s+खोब्रागड़े|नितेश\s+खोबरागडे/gi, 'Nitesh Khobragade');
+                    const grounding = data?.groundingMetadata?.groundingChunks || [];
+                    const grounded = [];
+                    for (const g of grounding) {
+                        const w = g?.web;
+                        if (w?.uri)
+                            grounded.push({ title: String(w.title || w.uri), url: String(w.uri) });
+                    }
+                    const all = [...grounded, ...external.sources].filter((x, i, a) => x.url && a.findIndex(y => y.url === x.url) === i).slice(0, 10);
+                    if (all.length && searchRequested)
+                        answer += `\n\nSources:\n${all.map(x => `- ${x.title}: ${x.url}`).join('\n')}`;
+                    return { answer, sources: all, webSearched: searchRequested, provider: 'gemini', model };
                 }
-                throw new Error(String(data?.error?.message || `Gemini API failed with status ${response.status}`));
-            }
-            const text = String(data?.candidates?.[0]?.content?.parts?.map((part) => part?.text || '').join('').trim() || '');
-            if (!text)
-                throw new Error('Gemini returned empty response');
-            if (isChat) {
-                let answer = voiceGender === 'female' ? normalizeFemale(text) : text.replace(/नितेश\s+खोबरागड़े|नितेश\s+खोब्रागड़े|नितेश\s+खोबरागडे/gi, 'Nitesh Khobragade');
-                const grounding = data?.groundingMetadata?.groundingChunks || [];
-                const grounded = [];
-                for (const g of grounding) {
-                    const w = g?.web;
-                    if (w?.uri)
-                        grounded.push({ title: String(w.title || w.uri), url: String(w.uri) });
+                catch (e) {
+                    primaryError = e;
+                    markFailure('gemini', undefined, e);
                 }
-                const all = [...grounded, ...external.sources].filter((x, i, a) => x.url && a.findIndex(y => y.url === x.url) === i).slice(0, 8);
-                if (all.length && searchRequested) {
-                    answer += `\n\nSources:\n${all.map(x => `- ${x.title}: ${x.url}`).join('\n')}`;
-                }
-                return { answer, sources: all, webSearched: searchRequested };
-            }
-            try {
-                const result = JSON.parse(text);
-                return { titles: Array.isArray(result.titles) ? result.titles : [], description: result.description || '', tags: Array.isArray(result.tags) ? result.tags : [], hashtags: Array.isArray(result.hashtags) ? result.hashtags : [] };
-            }
-            catch {
-                return { titles: [], description: text, tags: [], hashtags: [] };
             }
         }
-        catch (primaryError) {
-            if (!isChat || input.attachmentData) {
-                throw primaryError;
-            }
-            const system = `You are Khobragade AI, created by Nitesh Khobragade. Selected voice gender: ${voiceGender}. Use feminine first-person grammar if female. Answer in the user's language. Do not claim you are text-only. For current/search/news requests use only supplied web context and identify sources. Web context:\n${external.text || 'none'}`;
-            const answer = await openAiCompatibleFallback(input, system, userMessage);
-            const normalized = voiceGender === 'female' ? normalizeFemale(answer) : answer;
-            const suffix = external.sources.length && searchRequested ? `\n\nSources:\n${external.sources.map(x => `- ${x.title}: ${x.url}`).join('\n')}` : '';
-            return { answer: normalized + suffix, sources: external.sources, webSearched: searchRequested, fallback: true };
-        }
+        else
+            state('gemini', false);
+        if (input.attachmentData)
+            throw (primaryError || new Error('GEMINI_API_KEY missing for attachment analysis'));
+        const system = `You are Khobragade AI, created by Nitesh Khobragade. Answer in ${languageName}. Voice gender is ${voiceGender}; use feminine first-person grammar when female. Current local time: ${localDateTime || 'not supplied'}. Timezone: ${timeZone || 'not supplied'}. User location: ${locationName || 'not supplied'}. For current/search/news questions use only this web context and identify sources. Web context:\n${external.text || 'none'}`;
+        const fallback = await openAiCompatibleFallback(system, userMessage, history);
+        if (!isChat)
+            return parseStructuredText(fallback.text);
+        const answer = voiceGender === 'female' ? normalizeFemale(fallback.text) : fallback.text;
+        const suffix = external.sources.length && searchRequested ? `\n\nSources:\n${external.sources.map(x => `- ${x.title}: ${x.url}`).join('\n')}` : '';
+        return { answer: answer + suffix, sources: external.sources, webSearched: searchRequested, provider: fallback.provider, fallback: true };
     }
 }
-/* =========================
-   GEMINI FREE-TIER TTS
-   Returns a playable WAV data URL.
-========================= */
 function pcmToWavBase64(pcmBase64, sampleRate = 24000, channels = 1, bitsPerSample = 16) {
     const pcm = Buffer.from(pcmBase64, 'base64');
     const header = Buffer.alloc(44);
@@ -277,168 +360,179 @@ function pcmToWavBase64(pcmBase64, sampleRate = 24000, channels = 1, bitsPerSamp
 class GeminiAudio {
     async generate(input) {
         const apiKey = geminiKey();
+        if (!apiKey)
+            throw new Error('GEMINI_API_KEY missing');
         const text = String(input.text || input.message || input.script || '').trim();
         if (!text)
             throw new Error('Voice-over text is required');
-        if (text.length > 12000)
-            throw new Error('Voice-over text is too long');
         const voice = String(input.voice || 'Kore');
         const style = String(input.style || 'natural');
-        const speechPrompt = `Synthesize speech in a ${style} style. Speak the following text naturally. Do not add or remove words.\n\nTranscript:\n${text}`;
-        const response = await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-tts-preview:generateContent', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': apiKey,
-            },
-            body: JSON.stringify({
-                contents: [{ parts: [{ text: speechPrompt }] }],
-                generationConfig: {
-                    responseModalities: ['AUDIO'],
-                    speechConfig: {
-                        voiceConfig: {
-                            prebuiltVoiceConfig: { voiceName: voice },
-                        },
-                    },
-                },
-            }),
-        });
-        const data = await response.json();
-        if (!response.ok) {
-            console.error('Gemini TTS error:', data);
+        const model = env('GEMINI_TTS_MODEL', 'gemini-3.1-flash-tts-preview');
+        const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({ contents: [{ parts: [{ text: `Synthesize speech in a ${style} style. Speak the following text naturally. Do not add or remove words.\n\nTranscript:\n${text}` }] }], generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } } })
+        }, 45000);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok)
             throw new Error(data?.error?.message || `Gemini TTS failed with status ${response.status}`);
-        }
-        const part = data?.candidates?.[0]?.content?.parts?.find((p) => p?.inlineData?.data);
-        const pcmBase64 = part?.inlineData?.data;
+        const pcmBase64 = data?.candidates?.[0]?.content?.parts?.find((p) => p?.inlineData?.data)?.inlineData?.data;
         if (!pcmBase64)
-            throw new Error('Gemini TTS returned no audio. Please try again.');
-        const wavBase64 = pcmToWavBase64(pcmBase64);
-        return {
-            audioDataUrl: `data:audio/wav;base64,${wavBase64}`,
-            mimeType: 'audio/wav',
-            voice,
-            provider: 'gemini',
-            model: 'gemini-3.1-flash-tts-preview',
-        };
+            throw new Error('Gemini TTS returned no audio.');
+        return { audioDataUrl: `data:audio/wav;base64,${pcmToWavBase64(pcmBase64)}`, mimeType: 'audio/wav', voice, provider: 'gemini', model };
     }
 }
-/* =========================
-   GEMINI IMAGE + VEO VIDEO
-   These are real providers. Google may require billing/model access for
-   image/video generation even when text chat is on the free tier.
-========================= */
 class GeminiImage {
     async generate(input) {
         const prompt = String(input.prompt || input.topic || input.title || input.text || '').trim();
         if (!prompt)
             throw new Error('Image prompt is required');
-        const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
-        const model = process.env.GEMINI_IMAGE_MODEL || 'gemini-3.1-flash-image';
-        try {
-            if (!apiKey)
-                throw new Error('GEMINI_API_KEY missing');
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } }) });
-            const data = await response.json();
-            if (!response.ok)
-                throw new Error(String(data?.error?.message || `Gemini image generation failed (${response.status})`));
-            const image = (data?.candidates?.[0]?.content?.parts || []).find((x) => x?.inlineData?.data);
-            if (!image?.inlineData?.data)
-                throw new Error('Gemini returned no image');
-            const mime = image.inlineData.mimeType || 'image/png';
-            return { imageDataUrl: `data:${mime};base64,${image.inlineData.data}`, mimeType: mime, provider: 'gemini', model };
-        }
-        catch (primary) {
-            const hedra = process.env.HEDRA_API_KEY;
-            if (hedra) {
-                try {
-                    const r = await fetch(`https://api.hedra.com/v3/models/${process.env.HEDRA_IMAGE_MODEL || 'nano-banana-2'}`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Key ${hedra}` }, body: JSON.stringify({ input: { prompt, num_outputs: 1, aspect_ratio: String(input.aspectRatio || '16:9'), resolution: String(input.resolution || '1K') } }) });
-                    const d = await r.json();
-                    if (r.ok) {
-                        const uri = String(d?.image_url || d?.result?.image_url || d?.output?.url || d?.result?.url || '');
-                        if (uri)
-                            return { imageUrl: uri, provider: 'hedra', model: process.env.HEDRA_IMAGE_MODEL || 'nano-banana-2' };
+        const apiKey = geminiKey();
+        const model = env('GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image');
+        if (apiKey) {
+            try {
+                const response = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+                    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseModalities: ['TEXT', 'IMAGE'] } })
+                }, 60000);
+                const data = await response.json().catch(() => ({}));
+                if (response.ok) {
+                    const image = (data?.candidates?.[0]?.content?.parts || []).find((x) => x?.inlineData?.data);
+                    if (image?.inlineData?.data) {
+                        markSuccess('gemini-image', response.status);
+                        const mime = image.inlineData.mimeType || 'image/png';
+                        return { imageDataUrl: `data:${mime};base64,${image.inlineData.data}`, mimeType: mime, provider: 'gemini', model };
                     }
                 }
-                catch (e) {
-                    console.warn('Hedra image fallback failed', e);
-                }
-            }
-            try {
-                const key = process.env.POLLINATIONS_API_KEY || '';
-                const model = process.env.POLLINATIONS_IMAGE_MODEL || 'flux';
-                const base = key ? 'https://gen.pollinations.ai/image/' : 'https://image.pollinations.ai/prompt/';
-                const url = `${base}${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`;
-                const r = await fetch(url, { headers: key ? { Authorization: `Bearer ${key}` } : {} });
-                if (r.ok) {
-                    const mime = r.headers.get('content-type') || 'image/jpeg';
-                    const buf = Buffer.from(await r.arrayBuffer());
-                    if (buf.length > 1000)
-                        return { imageDataUrl: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'pollinations', model };
-                }
+                markFailure('gemini-image', response.status, data?.error?.message || 'Gemini returned no image');
             }
             catch (e) {
-                console.warn('Pollinations image fallback failed', e);
+                markFailure('gemini-image', undefined, e);
             }
-            throw new Error('ALL_IMAGE_PROVIDERS_EXHAUSTED');
         }
+        else
+            state('gemini-image', false);
+        const key = env('POLLINATIONS_API_KEY');
+        if (key) {
+            try {
+                const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai');
+                const model = env('POLLINATIONS_IMAGE_MODEL', 'flux');
+                const response = await fetchWithTimeout(`${base}/image/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&width=1024&height=1024`, { headers: { Authorization: `Bearer ${key}` } }, 90000);
+                if (response.ok) {
+                    const mime = response.headers.get('content-type') || 'image/jpeg';
+                    const buf = Buffer.from(await response.arrayBuffer());
+                    if (buf.length > 1000) {
+                        markSuccess('pollinations-image', response.status);
+                        return { imageDataUrl: `data:${mime};base64,${buf.toString('base64')}`, mimeType: mime, provider: 'pollinations', model };
+                    }
+                }
+                markFailure('pollinations-image', response.status, 'Pollinations returned no image');
+            }
+            catch (e) {
+                markFailure('pollinations-image', undefined, e);
+            }
+        }
+        else
+            state('pollinations-image', false);
+        throw new Error('ALL_IMAGE_PROVIDERS_EXHAUSTED');
     }
 }
-class GeminiVideo {
+class VideoProviderImpl {
     async generate(input) {
-        const apiKey = geminiKey();
-        const prompt = String(input.prompt || input.text || input.title || input.voice || '').trim() ||
-            `Create a ${String(input.style || 'cinematic')} video. ${String(input.transition || '')} ${String(input.photos || '')}`;
-        const model = process.env.GEMINI_VIDEO_MODEL || 'veo-3.1-generate-preview';
-        const base = 'https://generativelanguage.googleapis.com/v1beta';
+        const prompt = String(input.prompt || input.text || input.title || '').trim() || `Create a ${String(input.style || 'cinematic')} video.`;
         const imageDataUrl = String(input.imageDataUrl || '').trim();
-        let imagePart = undefined;
-        if (imageDataUrl.startsWith('data:image/')) {
-            const comma = imageDataUrl.indexOf(',');
-            if (comma > 0) {
-                const mimeType = imageDataUrl.slice(5, imageDataUrl.indexOf(';', 5) > 0 ? imageDataUrl.indexOf(';', 5) : comma);
-                const data = imageDataUrl.slice(comma + 1);
-                if (mimeType && data)
-                    imagePart = { inlineData: { mimeType, data } };
+        const gemKey = geminiKey();
+        if (gemKey) {
+            try {
+                const model = env('GEMINI_VIDEO_MODEL', 'veo-3.1-generate-preview');
+                const instance = { prompt };
+                if (imageDataUrl.startsWith('data:image/')) {
+                    const comma = imageDataUrl.indexOf(',');
+                    if (comma > 0) {
+                        const mimeEnd = imageDataUrl.indexOf(';', 5);
+                        const mimeType = imageDataUrl.slice(5, mimeEnd > 0 ? mimeEnd : comma);
+                        const data = imageDataUrl.slice(comma + 1);
+                        if (mimeType && data)
+                            instance.image = { inlineData: { mimeType, data } };
+                    }
+                }
+                const first = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/models/${model}:predictLongRunning`, { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': gemKey }, body: JSON.stringify({ instances: [instance], parameters: { numberOfVideos: 1, resolution: String(input.resolution || '720p'), aspectRatio: String(input.aspectRatio || '16:9') } }) }, 60000);
+                const created = await first.json().catch(() => ({}));
+                if (!first.ok) {
+                    const msg = String(created?.error?.message || '');
+                    if (first.status === 429)
+                        throw new Error('GEMINI_RATE_LIMIT');
+                    if (/billing|paid|quota|not available|permission/i.test(msg))
+                        throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED');
+                    throw new Error(msg || `Veo generation failed (${first.status})`);
+                }
+                const operation = created?.name;
+                if (!operation)
+                    throw new Error('Veo did not return an operation id');
+                for (let i = 0; i < 120; i++) {
+                    await new Promise(r => setTimeout(r, 10000));
+                    const r = await fetchWithTimeout(`https://generativelanguage.googleapis.com/v1beta/${operation}`, { headers: { 'x-goog-api-key': gemKey } }, 30000);
+                    const d = await r.json().catch(() => ({}));
+                    if (!r.ok)
+                        throw new Error(d?.error?.message || 'Veo status check failed');
+                    if (d.done) {
+                        if (d.error)
+                            throw new Error(d.error.message || 'Veo generation failed');
+                        const uri = d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+                        if (!uri)
+                            throw new Error('Veo completed but returned no video');
+                        markSuccess('gemini-video', 200);
+                        return { videoUri: uri, provider: 'gemini', model };
+                    }
+                }
+                throw new Error('Video generation timed out. Please try again.');
+            }
+            catch (e) {
+                markFailure('gemini-video', undefined, e);
+                if (e?.message === 'GEMINI_RATE_LIMIT') { /* continue to Pollinations */ }
             }
         }
-        const instance = { prompt };
-        if (imagePart)
-            instance.image = imagePart;
-        const first = await fetch(`${base}/models/${model}:predictLongRunning`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-            body: JSON.stringify({ instances: [instance], parameters: { numberOfVideos: 1, resolution: '720p', aspectRatio: '16:9' } })
-        });
-        const created = await first.json();
-        if (!first.ok) {
-            const msg = String(created?.error?.message || '');
-            if (first.status === 429)
-                throw new Error('GEMINI_RATE_LIMIT');
-            if (/billing|paid|quota|not available/i.test(msg))
-                throw new Error('VIDEO_PROVIDER_BILLING_REQUIRED');
-            throw new Error(msg || `Veo generation failed (${first.status})`);
-        }
-        const operation = created?.name;
-        if (!operation)
-            throw new Error('Veo did not return an operation id');
-        for (let i = 0; i < 90; i++) {
-            await new Promise(r => setTimeout(r, 10000));
-            const r = await fetch(`${base}/${operation}`, { headers: { 'x-goog-api-key': apiKey } });
-            const d = await r.json();
-            if (!r.ok)
-                throw new Error(d?.error?.message || 'Veo status check failed');
-            if (d.done) {
-                if (d.error)
-                    throw new Error(d.error.message || 'Veo generation failed');
-                const uri = d?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
-                if (!uri)
-                    throw new Error('Veo completed but returned no video');
-                return { videoUri: uri, provider: 'gemini', model };
+        else
+            state('gemini-video', false);
+        const key = env('POLLINATIONS_API_KEY');
+        if (key) {
+            try {
+                const base = env('POLLINATIONS_BASE_URL', 'https://gen.pollinations.ai');
+                const model = env('POLLINATIONS_VIDEO_MODEL', 'veo');
+                const url = `${base}/video/${encodeURIComponent(prompt)}?model=${encodeURIComponent(model)}&duration=${encodeURIComponent(String(input.duration || 5))}`;
+                const response = await fetchWithTimeout(url, { headers: { Authorization: `Bearer ${key}` } }, 180000);
+                if (response.ok) {
+                    const contentType = response.headers.get('content-type') || '';
+                    if (contentType.includes('video')) {
+                        const buf = Buffer.from(await response.arrayBuffer());
+                        if (buf.length > 10000) {
+                            markSuccess('pollinations-video', response.status);
+                            return { videoDataUrl: `data:${contentType};base64,${buf.toString('base64')}`, mimeType: contentType, provider: 'pollinations', model };
+                        }
+                    }
+                    const text = await response.text();
+                    if (/^https?:\/\//i.test(text.trim()))
+                        return { videoUri: text.trim(), provider: 'pollinations', model };
+                }
+                markFailure('pollinations-video', response.status, 'Pollinations returned no video');
+            }
+            catch (e) {
+                markFailure('pollinations-video', undefined, e);
             }
         }
-        throw new Error('Video generation timed out. Please try again.');
+        else
+            state('pollinations-video', false);
+        throw new Error('ALL_VIDEO_PROVIDERS_EXHAUSTED');
     }
 }
+export function providerStatus() {
+    const configured = {
+        gemini: !!geminiKey(), openrouter: !!env('OPENROUTER_API_KEY'), groq: !!env('GROQ_API_KEY'), cerebras: !!env('CEREBRAS_API_KEY'),
+        mistral: !!env('MISTRAL_API_KEY'), deepseek: !!env('DEEPSEEK_API_KEY'), together: !!env('TOGETHER_API_KEY'), xai: !!env('XAI_API_KEY'), pollinations: !!env('POLLINATIONS_API_KEY')
+    };
+    return Object.entries(configured).map(([name, isConfigured]) => ({ name, configured: isConfigured, ...(providerState.get(name) || { failures: 0 }) }));
+}
+export async function searchWeb(query) { return fetchWebContext(query); }
 export const textProvider = new GeminiText();
 export const audioProvider = new GeminiAudio();
 export const imageProvider = new GeminiImage();
-export const videoProvider = new GeminiVideo();
+export const videoProvider = new VideoProviderImpl();

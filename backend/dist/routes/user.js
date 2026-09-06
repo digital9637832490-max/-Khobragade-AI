@@ -3,9 +3,38 @@ import { z } from 'zod';
 import { pool, tx } from '../db.js';
 import { requireAuth } from '../auth.js';
 import { changeCoins } from '../wallet.js';
-import { textProvider } from '../ai/providers.js';
+import { textProvider, providerStatus, searchWeb } from '../ai/providers.js';
 export const userRouter = Router();
 userRouter.use(requireAuth);
+userRouter.get('/time', async (req, res, next) => {
+    try {
+        const tz = String(req.query.timeZone || 'Asia/Kolkata');
+        let date = new Date();
+        let parts = [];
+        try {
+            parts = new Intl.DateTimeFormat('en-IN', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+        }
+        catch {
+            parts = new Intl.DateTimeFormat('en-IN', { timeZone: 'UTC', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).formatToParts(date);
+        }
+        const get = (type) => parts.find(p => p.type === type)?.value || '';
+        res.json({ iso: date.toISOString(), timeZone: tz, localDateTime: `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}:${get('second')}` });
+    }
+    catch (e) {
+        next(e);
+    }
+});
+userRouter.get('/ai/providers/status', async (req, res) => { res.json({ providers: providerStatus() }); });
+userRouter.get('/ai/search', async (req, res, next) => { try {
+    const q = z.string().min(2).max(500).parse(req.query.q);
+    const result = await searchWeb(q);
+    if (!result.sources.length)
+        return res.status(502).json({ error: 'WEB_SEARCH_UNAVAILABLE', message: 'No live web search provider returned results.' });
+    res.json(result);
+}
+catch (e) {
+    next(e);
+} });
 userRouter.get('/location/reverse', async (req, res, next) => {
     try {
         const lat = Number(req.query.lat);
@@ -124,13 +153,14 @@ userRouter.post('/ai/voice-chat', async (req, res, next) => {
             message: z.string().min(1).max(12000),
             history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).max(20).default([]),
             voiceGender: z.enum(['female', 'male']).default('female'),
+            language: z.enum(['en', 'hi', 'mr']).default('hi'),
             localDateTime: z.string().max(120).optional(),
             timeZone: z.string().max(120).optional(),
             locationName: z.string().max(255).optional(),
             latitude: z.number().min(-90).max(90).optional(),
             longitude: z.number().min(-180).max(180).optional()
         }).parse(req.body);
-        const result = await textProvider.generate({ mode: 'chat', message: b.message, history: b.history, voiceGender: b.voiceGender, localDateTime: b.localDateTime, timeZone: b.timeZone, locationName: b.locationName, latitude: b.latitude, longitude: b.longitude });
+        const result = await textProvider.generate({ mode: 'chat', message: b.message, history: b.history, voiceGender: b.voiceGender, language: b.language, localDateTime: b.localDateTime, timeZone: b.timeZone, locationName: b.locationName, latitude: b.latitude, longitude: b.longitude });
         res.json(result);
     }
     catch (e) {
@@ -138,8 +168,8 @@ userRouter.post('/ai/voice-chat', async (req, res, next) => {
     }
 });
 userRouter.post('/ai/chat', async (req, res, next) => { try {
-    const b = z.object({ message: z.string().min(1).max(12000), history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).max(20).default([]), voiceGender: z.enum(['female', 'male']).default('female'), localDateTime: z.string().max(120).optional(), timeZone: z.string().max(120).optional(), locationName: z.string().max(255).optional(), latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(), attachmentName: z.string().max(255).optional(), attachmentMime: z.string().max(120).optional(), attachmentData: z.string().max(20_000_000).optional() }).parse(req.body);
-    res.status(202).json(await createAiJob(req.auth.id, 'chat', { mode: 'chat', message: b.message, history: b.history, voiceGender: b.voiceGender, localDateTime: b.localDateTime, timeZone: b.timeZone, locationName: b.locationName, latitude: b.latitude, longitude: b.longitude, attachmentName: b.attachmentName, attachmentMime: b.attachmentMime, attachmentData: b.attachmentData }));
+    const b = z.object({ message: z.string().min(1).max(12000), history: z.array(z.object({ role: z.enum(['user', 'assistant']), content: z.string() })).max(20).default([]), voiceGender: z.enum(['female', 'male']).default('female'), language: z.enum(['en', 'hi', 'mr']).default('hi'), localDateTime: z.string().max(120).optional(), timeZone: z.string().max(120).optional(), locationName: z.string().max(255).optional(), latitude: z.number().min(-90).max(90).optional(), longitude: z.number().min(-180).max(180).optional(), attachmentName: z.string().max(255).optional(), attachmentMime: z.string().max(120).optional(), attachmentData: z.string().max(20_000_000).optional() }).parse(req.body);
+    res.json(await textProvider.generate({ mode: 'chat', message: b.message, history: b.history, voiceGender: b.voiceGender, language: b.language, localDateTime: b.localDateTime, timeZone: b.timeZone, locationName: b.locationName, latitude: b.latitude, longitude: b.longitude, attachmentName: b.attachmentName, attachmentMime: b.attachmentMime, attachmentData: b.attachmentData }));
 }
 catch (e) {
     next(e);
@@ -189,13 +219,26 @@ userRouter.get('/ai/video/:id/file', async (req, res, next) => {
         const q = await pool.query('SELECT result FROM ai_jobs WHERE id=$1 AND user_id=$2 AND tool_key=$3 AND status=$4', [req.params.id, req.auth.id, 'video', 'completed']);
         if (!q.rowCount)
             return res.status(404).json({ error: 'Generated video not found' });
-        const uri = String(q.rows[0]?.result?.videoUri || q.rows[0]?.result?.videoUrl || '');
+        const result = q.rows[0]?.result || {};
+        const dataUrl = String(result.videoDataUrl || '');
+        if (dataUrl.startsWith('data:video/')) {
+            const comma = dataUrl.indexOf(',');
+            if (comma < 0)
+                return res.status(404).json({ error: 'Video file is not available' });
+            const mime = dataUrl.slice(5, dataUrl.indexOf(';') > 0 ? dataUrl.indexOf(';') : comma);
+            const buf = Buffer.from(dataUrl.slice(comma + 1), 'base64');
+            res.setHeader('Content-Type', mime || 'video/mp4');
+            res.setHeader('Cache-Control', 'private, max-age=300');
+            return res.end(buf);
+        }
+        const uri = String(result.videoUri || result.videoUrl || '');
         if (!uri)
             return res.status(404).json({ error: 'Video file is not available' });
         const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY || '';
-        if (!apiKey)
-            return res.status(500).json({ error: 'Gemini API key missing' });
-        const r = await fetch(uri, { headers: { 'x-goog-api-key': apiKey } });
+        const headers = {};
+        if (apiKey && /generativelanguage\.googleapis\.com/i.test(uri))
+            headers['x-goog-api-key'] = apiKey;
+        const r = await fetch(uri, { headers });
         if (!r.ok)
             return res.status(r.status).json({ error: 'Generated video could not be downloaded' });
         res.setHeader('Content-Type', r.headers.get('content-type') || 'video/mp4');

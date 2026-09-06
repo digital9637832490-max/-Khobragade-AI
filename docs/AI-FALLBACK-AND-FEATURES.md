@@ -52,3 +52,11 @@ Media fallback:
 - Gemini 3.1 Flash Image is the primary image provider.
 - Optional Pollinations API fallback can be enabled with `POLLINATIONS_API_KEY`.
 - Veo is the primary video provider; optional Pollinations video fallback uses `POLLINATIONS_VIDEO_MODEL` when `POLLINATIONS_API_KEY` is configured.
+
+
+## 2026-09-06 provider hardening
+The backend now has a real ordered text fallback chain: Gemini → OpenRouter → Groq → Cerebras → Mistral → DeepSeek → Together → xAI → Pollinations. Each provider is skipped when its key is absent and marked with HTTP/quota/error state after a live request. The authenticated `/api/ai/providers/status` endpoint exposes configured/live state.
+
+Web search uses configured Tavily/Brave/Serper providers with a real DuckDuckGo HTML fallback and Google News RSS for news queries. Search never fabricates results.
+
+Image generation uses Gemini 3.1 Flash Image first and Pollinations as the authenticated fallback. Video generation uses Veo 3.1 first and Pollinations video as the authenticated fallback. Provider credentials/quota are external deployment requirements and are never embedded in the ZIP.
