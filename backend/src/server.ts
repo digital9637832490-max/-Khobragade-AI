@@ -32,7 +32,7 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '20mb' }));
 
 app.use(
   rateLimit({
@@ -137,7 +137,7 @@ liveWss.on('connection', (client: WebSocket, req: any) => {
   const pending: RawData[] = [];
   gemini.on('open', () => {
     gemini.send(JSON.stringify({setup:{
-      model:`models/${process.env.GEMINI_LIVE_MODEL || 'gemini-2.5-flash-native-audio-preview-12-2025'}`,
+      model:`models/${process.env.GEMINI_LIVE_MODEL || 'gemini-3.1-flash-live-preview'}`,
       generationConfig:{responseModalities:['AUDIO'],speechConfig:{voiceConfig:{prebuiltVoiceConfig:{voiceName}}}},
       tools:[{googleSearch:{}}],
       inputAudioTranscription:{}, outputAudioTranscription:{},

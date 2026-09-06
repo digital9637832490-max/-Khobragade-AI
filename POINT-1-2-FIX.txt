@@ -1,0 +1,27 @@
+KHOBRAGADE AI — POINT 1 + POINT 2 FIX
+
+Point 1: Voice Assistant
+- Continuous listen -> speech-to-text -> AI -> text-to-speech -> listen loop.
+- Prevents duplicate voice submissions.
+- Handles speech status/error/retry safely.
+- Hindi/English/Marathi locale selection retained.
+- Stop/cancel flow retained.
+
+Point 2: Text Assistant
+- Keyboard is dismissed immediately on Send.
+- Normal chat requests no longer perform location lookup unless the message actually asks for location/weather/nearby context.
+- Chat history is sanitized so generated image/video base64 is never sent back to the AI.
+- History messages are capped before API submission.
+- Empty AI responses are treated as errors instead of displaying a blank bubble.
+- API requests have a timeout and clearer network/HTTP errors.
+- Gemini Search/Maps tools are attached only when search is actually requested, reducing normal reply latency.
+- Gemini model fallback list updated to currently supported stable model IDs.
+- Backend JSON body limit increased to safely accept the existing attachment limit.
+
+Changed files only:
+1. android-app/lib/screens/chat.dart
+2. android-app/lib/api.dart
+3. backend/src/ai/providers.ts
+4. backend/src/server.ts
+
+Do not replace unrelated project files.

@@ -186,9 +186,195 @@ class _ChatScreenState extends State<ChatScreen>{
   }catch(_){ }
   return out;
  }
- Future<void> send([String? value,bool speakReply=false])async{final text=(value??input.text).trim();if((text.isEmpty&&attachmentData==null)||busy)return;final sentText=text.isEmpty?'Attached file: ${attachmentName??'file'}':text;setState((){messages.add({'role':'user','content':attachmentName==null?sentText:'$sentText\n📎 $attachmentName'});input.clear();busy=true;});await save();try{Map<String,dynamic> job;String spoken='';if(wantsVideo(sentText)){voicePhase.value='thinking';final ctx=await _clientContext();String? previousImage;for(final m in messages.reversed){final c=m['content']??'';if(m['role']=='assistant'&&c.startsWith('[[IMAGE]]')){previousImage=c.substring(9);break;}}job=await api.request('/ai/video',method:'POST',body:{'prompt':sentText,if(previousImage!=null)'imageDataUrl':previousImage,...ctx});final r=await waitJob(job['id'].toString(),video:true);final uri=(r['videoUri']??r['videoUrl']??'').toString();final answer=uri.isEmpty?'✅ Video generate ho gaya.':'[[VIDEO]]$uri';setState(()=>messages.add({'role':'assistant','content':answer}));spoken='वीडियो तैयार हो गया है।';}else if(wantsImage(sentText)){voicePhase.value='thinking';job=await api.request('/ai/photo',method:'POST',body:{'prompt':sentText});final r=await waitJob(job['id'].toString());final img=(r['imageDataUrl']??r['imageUrl']??'').toString();if(img.isEmpty)throw Exception('Image generated but image data missing');setState(()=>messages.add({'role':'assistant','content':'[[IMAGE]]$img'}));spoken='इमेज तैयार हो गई है।';}else{voicePhase.value='thinking';final history=messages.length>20?messages.sublist(messages.length-20):messages;final ctx=await _clientContext();final r=await api.request('/ai/chat',method:'POST',body:{'message':sentText,'history':history,'voiceGender':voiceGender,'language':language,...ctx,if(attachmentData!=null)'attachmentName':attachmentName,if(attachmentData!=null)'attachmentMime':attachmentMime,if(attachmentData!=null)'attachmentData':attachmentData});final answer=(r['answer']??r['description']??'').toString();setState(()=>messages.add({'role':'assistant','content':answer}));spoken=answer;}if((speakReply||voiceMode)&&spoken.isNotEmpty)await speak(spoken,continueVoice:false);if(mounted)setState((){attachmentName=null;attachmentMime=null;attachmentData=null;});}catch(e){final raw=e.toString().replaceFirst('Exception: ','');String msg='⚠️ $raw';if(raw.contains('ALL_IMAGE_PROVIDERS_EXHAUSTED'))msg='⚠️ अभी image generation की सभी configured AI services उपलब्ध नहीं हैं। कृपया थोड़ी देर बाद फिर कोशिश करें।';else if(raw.contains('IMAGE_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Image generation service के लिए provider access/billing चाहिए।';else if(raw.contains('ALL_AI_PROVIDERS_EXHAUSTED'))msg='⚠️ अभी सभी configured AI services उपलब्ध नहीं हैं। कृपया थोड़ी देर बाद फिर कोशिश करें।';else if(raw.contains('GEMINI_DAILY_QUOTA')){quotaKind='daily';quotaUntil=DateTime.now().add(const Duration(hours:24));msg='आज की AI उपयोग सीमा पूरी हो गई है। अगले quota reset के बाद फिर कोशिश करें।';}else if(raw.contains('VIDEO_PROVIDER_BILLING_REQUIRED'))msg='⚠️ Video generation ke liye Google billing/model access chahiye.';else if(raw.contains('GEMINI_RATE_LIMIT')||raw.contains('429')){quotaKind='minute';quotaUntil=DateTime.now().add(const Duration(minutes:1));msg='अभी बहुत requests आ गई हैं। थोड़ी देर बाद फिर कोशिश करें।';}setState(()=>messages.add({'role':'assistant','content':msg}));}finally{busy=false;await save();if(mounted)setState((){});Future.delayed(const Duration(milliseconds:40),()=>scroll.hasClients?scroll.animateTo(scroll.position.maxScrollExtent,duration:const Duration(milliseconds:140),curve:Curves.easeOut):null);}}
- Future<void> _submitVoiceWords()async{if(voiceSending||busy||!voiceMode)return;final said=lastVoiceText.trim();if(said.isEmpty)return;voiceSending=true;lastVoiceText='';await speech.stop();if(mounted)setState(()=>listening=false);voicePhase.value='thinking';try{await send(said,true);}finally{voiceSending=false;if(voiceMode&&mounted&&!busy&&!voiceRestarting){voiceRestarting=true;try{await Future.delayed(const Duration(milliseconds:220));if(voiceMode&&mounted&&!busy&&!voiceSending){voicePhase.value='listening';await mic(true,0);}}finally{voiceRestarting=false;}}}}
- Future<void> mic([bool autoSend=false,int retry=0])async{if(busy||voiceSending)return;if(listening){await speech.stop();if(mounted)setState(()=>listening=false);await Future.delayed(const Duration(milliseconds:120));}lastVoiceText='';voiceWords.value='';final ok=await speech.initialize(onStatus:(status){final active=status=='listening';if(active)voicePhase.value='listening';if(mounted)setState(()=>listening=active);if(autoSend&&voiceMode&&(status=='done'||status=='notListening')&&!busy&&!voiceSending){if(lastVoiceText.trim().isNotEmpty){Future.microtask(_submitVoiceWords);}else if(retry<3){Future.delayed(const Duration(milliseconds:450),()=>mic(true,retry+1));}}},onError:(e){if(mounted)setState(()=>listening=false);voicePhase.value='error';if(autoSend&&voiceMode&&!busy&&!voiceSending&&retry<3){Future.delayed(const Duration(milliseconds:650),()=>mic(true,retry+1));}});if(!ok){voicePhase.value='error';if(mounted)ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission / speech service unavailable')));return;}String? localeId;try{final locales=await speech.locales();final wanted=language=='mr'?'mr':language=='en'?'en':'hi';final hit=locales.where((l)=>l.localeId.toLowerCase().startsWith(wanted)).toList();localeId=hit.isNotEmpty?hit.first.localeId:(await speech.systemLocale())?.localeId;}catch(_){}voicePhase.value='listening';if(mounted)setState(()=>listening=true);await speech.listen(listenOptions:stt.SpeechListenOptions(localeId:localeId,listenFor:const Duration(seconds:60),pauseFor:const Duration(seconds:2),partialResults:true,listenMode:stt.ListenMode.dictation,cancelOnError:false),onResult:(r){final words=r.recognizedWords.trim();if(words.isNotEmpty){lastVoiceText=words;input.text=words;input.selection=TextSelection.collapsed(offset:input.text.length);voiceWords.value=words;if(mounted)setState((){});}if(r.finalResult&&autoSend&&lastVoiceText.isNotEmpty){Future.microtask(_submitVoiceWords);}});}
+ Future<List<Map<String,String>>> _apiHistory() async {
+  final source = messages.length > 20 ? messages.sublist(messages.length - 20) : messages;
+  return source.map((m) {
+    var content = (m['content'] ?? '').toString();
+    // Never send generated binary data back inside chat history.
+    if (content.startsWith('[[IMAGE]]')) content = '[Previous image generated]';
+    if (content.startsWith('[[VIDEO]]')) content = '[Previous video generated]';
+    if (content.length > 6000) content = content.substring(0, 6000);
+    return <String,String>{'role': m['role'] ?? 'user', 'content': content};
+  }).toList();
+ }
+ bool _needsLocationContext(String text) => RegExp(r'\b(where am i|my location|current location|near me|nearby|location|weather|mausam|मौसम|कहाँ हूँ|कहां हूँ|लोकेशन|मेरे पास|जवळ|स्थान)\b', caseSensitive:false).hasMatch(text);
+
+ Future<void> send([String? value, bool speakReply = false]) async {
+  final text = (value ?? input.text).trim();
+  if ((text.isEmpty && attachmentData == null) || busy) return;
+  final sentText = text.isEmpty ? 'Attached file: ${attachmentName ?? 'file'}' : text;
+  FocusScope.of(context).unfocus();
+  setState(() {
+    messages.add({'role':'user','content': attachmentName == null ? sentText : '$sentText\n📎 $attachmentName'});
+    input.clear();
+    busy = true;
+  });
+  await save();
+  try {
+    Map<String,dynamic> job;
+    String spoken = '';
+    if (wantsVideo(sentText)) {
+      voicePhase.value = 'thinking';
+      final ctx = _needsLocationContext(sentText) ? await _clientContext() : <String,dynamic>{};
+      String? previousImage;
+      for (final m in messages.reversed) {
+        final c = m['content'] ?? '';
+        if (m['role'] == 'assistant' && c.startsWith('[[IMAGE]]')) {
+          previousImage = c.substring(9);
+          break;
+        }
+      }
+      job = await api.request('/ai/video', method:'POST', body:{'prompt':sentText, if(previousImage != null) 'imageDataUrl':previousImage, ...ctx});
+      final r = await waitJob(job['id'].toString(), video:true);
+      final uri = (r['videoUri'] ?? r['videoUrl'] ?? '').toString();
+      final answer = uri.isEmpty ? '✅ Video generate ho gaya.' : '[[VIDEO]]$uri';
+      if (mounted) setState(() => messages.add({'role':'assistant','content':answer}));
+      spoken = 'वीडियो तैयार हो गया है।';
+    } else if (wantsImage(sentText)) {
+      voicePhase.value = 'thinking';
+      job = await api.request('/ai/photo', method:'POST', body:{'prompt':sentText});
+      final r = await waitJob(job['id'].toString());
+      final img = (r['imageDataUrl'] ?? r['imageUrl'] ?? '').toString();
+      if (img.isEmpty) throw Exception('Image generated but image data missing');
+      if (mounted) setState(() => messages.add({'role':'assistant','content':'[[IMAGE]]$img'}));
+      spoken = 'इमेज तैयार हो गई है।';
+    } else {
+      voicePhase.value = 'thinking';
+      final history = await _apiHistory();
+      final ctx = _needsLocationContext(sentText) ? await _clientContext() : <String,dynamic>{};
+      final r = await api.request('/ai/chat', method:'POST', body:{
+        'message': sentText,
+        'history': history,
+        'voiceGender': voiceGender,
+        'language': language,
+        ...ctx,
+        if(attachmentData != null) 'attachmentName': attachmentName,
+        if(attachmentData != null) 'attachmentMime': attachmentMime,
+        if(attachmentData != null) 'attachmentData': attachmentData,
+      });
+      final answer = (r['answer'] ?? r['description'] ?? '').toString().trim();
+      if (answer.isEmpty) throw Exception('AI returned an empty response. Please try again.');
+      if (mounted) setState(() => messages.add({'role':'assistant','content':answer}));
+      spoken = answer;
+    }
+    if ((speakReply || voiceMode) && spoken.isNotEmpty) await speak(spoken, continueVoice:false);
+    if (mounted) setState(() { attachmentName=null; attachmentMime=null; attachmentData=null; });
+  } catch(e) {
+    final raw = e.toString().replaceFirst('Exception: ','');
+    String msg = '⚠️ $raw';
+    if(raw.contains('ALL_IMAGE_PROVIDERS_EXHAUSTED')) msg='⚠️ Image generation service अभी उपलब्ध नहीं है।';
+    else if(raw.contains('IMAGE_PROVIDER_BILLING_REQUIRED')) msg='⚠️ Image generation provider access/billing चाहिए।';
+    else if(raw.contains('ALL_AI_PROVIDERS_EXHAUSTED')) msg='⚠️ AI service अभी उपलब्ध नहीं है। कृपया फिर कोशिश करें।';
+    else if(raw.contains('GEMINI_DAILY_QUOTA')) { quotaKind='daily'; quotaUntil=DateTime.now().add(const Duration(hours:24)); msg='आज की AI उपयोग सीमा पूरी हो गई है।'; }
+    else if(raw.contains('VIDEO_PROVIDER_BILLING_REQUIRED')) msg='⚠️ Video generation के लिए provider access/billing चाहिए।';
+    else if(raw.contains('GEMINI_RATE_LIMIT') || raw.contains('429')) { quotaKind='minute'; quotaUntil=DateTime.now().add(const Duration(minutes:1)); msg='⚠️ अभी बहुत requests हैं। थोड़ी देर बाद फिर कोशिश करें।'; }
+    if (mounted) setState(() => messages.add({'role':'assistant','content':msg}));
+  } finally {
+    busy = false;
+    await save();
+    if (mounted) setState((){});
+    _scrollBottom();
+  }
+ }
+
+ Future<void> _submitVoiceWords() async {
+  if (voiceSending || busy || !voiceMode) return;
+  final said = lastVoiceText.trim();
+  if (said.isEmpty) return;
+  voiceSending = true;
+  lastVoiceText = '';
+  await speech.stop();
+  if (mounted) setState(() => listening=false);
+  voicePhase.value = 'thinking';
+  try {
+    await send(said, true);
+  } finally {
+    voiceSending = false;
+    if (voiceMode && mounted && !busy && !voiceRestarting) {
+      voiceRestarting = true;
+      try {
+        await Future.delayed(const Duration(milliseconds:250));
+        if (voiceMode && mounted && !busy && !voiceSending) await mic(true,0);
+      } finally { voiceRestarting=false; }
+    }
+  }
+ }
+
+ Future<void> mic([bool autoSend=false, int retry=0]) async {
+  if (busy || voiceSending) return;
+  if (listening) {
+    await speech.stop();
+    if (mounted) setState(() => listening=false);
+    await Future.delayed(const Duration(milliseconds:120));
+  }
+  lastVoiceText='';
+  voiceWords.value='';
+  bool finalSubmitted=false;
+  final ok = await speech.initialize(
+    onStatus:(status){
+      final active=status=='listening';
+      if(active) voicePhase.value='listening';
+      if(mounted) setState(() => listening=active);
+      if(autoSend && voiceMode && (status=='done'||status=='notListening') && !busy && !voiceSending && !finalSubmitted) {
+        if(lastVoiceText.trim().isNotEmpty) {
+          finalSubmitted=true;
+          Future.microtask(_submitVoiceWords);
+        } else if(retry<2) {
+          Future.delayed(const Duration(milliseconds:350),(){if(voiceMode&&mounted&&!busy&&!voiceSending) mic(true,retry+1);});
+        }
+      }
+    },
+    onError:(e){
+      if(mounted) setState(() => listening=false);
+      voicePhase.value='error';
+      if(autoSend && voiceMode && !busy && !voiceSending && retry<2) {
+        Future.delayed(const Duration(milliseconds:500),(){if(voiceMode&&mounted&&!busy&&!voiceSending) mic(true,retry+1);});
+      }
+    },
+  );
+  if(!ok){
+    voicePhase.value='error';
+    if(mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content:Text('Microphone permission / speech service unavailable')));
+    return;
+  }
+  String? localeId;
+  try {
+    final locales=await speech.locales();
+    final wanted=language=='mr'?'mr':language=='en'?'en':'hi';
+    final hit=locales.where((l)=>l.localeId.toLowerCase().startsWith(wanted)).toList();
+    localeId=hit.isNotEmpty ? hit.first.localeId : (await speech.systemLocale())?.localeId;
+  } catch(_) {}
+  voicePhase.value='listening';
+  if(mounted) setState(()=>listening=true);
+  try {
+    await speech.listen(
+      listenOptions:stt.SpeechListenOptions(
+        localeId:localeId,
+        listenFor:const Duration(seconds:45),
+        pauseFor:const Duration(seconds:2),
+        partialResults:true,
+        listenMode:stt.ListenMode.dictation,
+        cancelOnError:false,
+      ),
+      onResult:(r){
+        final words=r.recognizedWords.trim();
+        if(words.isNotEmpty){
+          lastVoiceText=words;
+          voiceWords.value=words;
+          if(mounted) setState((){ input.text=words; input.selection=TextSelection.collapsed(offset:input.text.length); });
+        }
+        if(r.finalResult && autoSend && lastVoiceText.isNotEmpty && !finalSubmitted){
+          finalSubmitted=true;
+          Future.microtask(_submitVoiceWords);
+        }
+      },
+    );
+  } catch(e) {
+    voicePhase.value='error';
+    if(mounted) setState(()=>listening=false);
+    if(autoSend && voiceMode && retry<2) Future.delayed(const Duration(milliseconds:500),(){if(voiceMode&&mounted&&!busy&&!voiceSending)mic(true,retry+1);});
+  }
+ }
  Future<void> fresh()async{await newChat();}
  Future<void> stopVoiceConversation()async{voiceMode=false;voicePhase.value='ready';voiceWords.value='';await speech.stop();await tts.stop();await liveVoice?.stop();liveVoice=null;await save();if(mounted)setState((){});}
  Future<void> openVoiceConversation()async{

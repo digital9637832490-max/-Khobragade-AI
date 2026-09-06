@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,10 +10,24 @@ class Api {
     final headers={'Content-Type':'application/json', if(token!=null)'Authorization':'Bearer $token'};
     final uri=Uri.parse('${Config.apiBaseUrl}$path');
     http.Response r;
-    if(method=='POST'){r=await http.post(uri,headers:headers,body:jsonEncode(body??{}));}
-    else{r=await http.get(uri,headers:headers);}
-    final data=jsonDecode(r.body);
-    if(r.statusCode>=400) throw Exception(data['error']??'Request failed');
+    try {
+      if(method=='POST'){
+        r=await http.post(uri,headers:headers,body:jsonEncode(body??{})).timeout(const Duration(seconds:35));
+      } else {
+        r=await http.get(uri,headers:headers).timeout(const Duration(seconds:35));
+      }
+    } on TimeoutException {
+      throw Exception('Server response timed out. Please try again.');
+    } catch(e) {
+      if(e is Exception) rethrow;
+      throw Exception('Network connection failed.');
+    }
+    dynamic data;
+    try { data=jsonDecode(r.body); } catch(_) { data=<String,dynamic>{}; }
+    if(r.statusCode>=400){
+      final error=data is Map ? (data['error']??data['message']) : null;
+      throw Exception(error?.toString()??'Request failed (${r.statusCode})');
+    }
     return data is Map<String,dynamic>?data:{'data':data};
   }
 }
